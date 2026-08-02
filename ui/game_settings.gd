@@ -16,9 +16,32 @@ const MIN_HANDS_PER_LEVEL := 1
 const MAX_HANDS_PER_LEVEL := 100
 
 
-## 启动时应用需要全局生效的运行时设置（行动倒计时）。
+## 启动时应用需要全局生效的运行时设置（行动倒计时、全屏）。
 static func apply_runtime() -> void:
 	Events.DEFAULT_DEADLINE_MS = get_deadline_ms()
+	_apply_fullscreen(is_fullscreen())
+
+
+# ---- 全屏（display/fullscreen，窗口拉伸由 stretch 配置负责等比缩放） ----
+
+static func is_fullscreen() -> bool:
+	var cfg := ConfigFile.new()
+	if cfg.load(SETTINGS_PATH) == OK:
+		return bool(cfg.get_value("display", "fullscreen", false))
+	return false
+
+
+static func set_fullscreen(full: bool) -> void:
+	_apply_fullscreen(full)
+	_save_value("display", "fullscreen", full)
+
+
+## 无头模式（--auto 冒烟、单元测试）下没有窗口，直接跳过。
+static func _apply_fullscreen(full: bool) -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	DisplayServer.window_set_mode(
+			DisplayServer.WINDOW_MODE_FULLSCREEN if full else DisplayServer.WINDOW_MODE_WINDOWED)
 
 
 # ---- 行动倒计时（gameplay/deadline_ms，0 = 关闭） ----

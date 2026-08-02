@@ -73,6 +73,16 @@ func _ready() -> void:
 	_deadline_check.toggled.connect(_on_deadline_toggled)
 	_deadline_spin.value_changed.connect(_on_deadline_changed)
 
+	# 全屏：立即生效并持久化（也可用 F11 随时切换）
+	var fs_check := CheckBox.new()
+	fs_check.text = "全屏（F11 切换）"
+	fs_check.button_pressed = GameSettings.is_fullscreen()
+	vbox.add_child(fs_check)
+	fs_check.toggled.connect(func(on: bool) -> void:
+		AudioManager.play(&"click")
+		GameSettings.set_fullscreen(on)
+	)
+
 	# 动画速度：标准（1.0）/ 快速（0.5），进入牌桌时生效
 	var anim_row := HBoxContainer.new()
 	anim_row.add_theme_constant_override("separation", 8)

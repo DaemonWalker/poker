@@ -29,6 +29,13 @@ func _ready() -> void:
 		change_scene("main_menu")
 
 
+## F11 全局切换全屏（持久化到设置，与设置界面勾选同一存储）。
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo \
+			and event.keycode == KEY_F11:
+		GameSettings.set_fullscreen(not GameSettings.is_fullscreen())
+
+
 ## 切换场景；params 会传给新场景的 setup(params)（若其实现了该方法）。
 func change_scene(scene_name: String, params: Dictionary = {}) -> void:
 	assert(SCENES.has(scene_name), "未知场景: " + scene_name)
