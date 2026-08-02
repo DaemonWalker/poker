@@ -120,7 +120,12 @@ func set_avatar(avatar_id: String) -> void:
 
 ## 按 PlayerState 刷新状态标签与整体置灰。
 func refresh_status(p: PlayerState) -> void:
-	match p.status:
+	set_status(p.status)
+
+
+## 按状态值刷新状态标签与整体置灰（事件回放用快照值，不读实时 PlayerState）。
+func set_status(status: int) -> void:
+	match status:
 		PlayerState.Status.FOLDED:
 			_status_label.text = "弃牌"
 		PlayerState.Status.ALL_IN:
@@ -129,7 +134,7 @@ func refresh_status(p: PlayerState) -> void:
 			_status_label.text = "出局"
 		_:
 			_status_label.text = ""
-	modulate = Color(1, 1, 1, 0.35) if p.status == PlayerState.Status.OUT else Color.WHITE
+	modulate = Color(1, 1, 1, 0.35) if status == PlayerState.Status.OUT else Color.WHITE
 
 
 func set_chips(chips: int) -> void:

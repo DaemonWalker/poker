@@ -59,7 +59,7 @@ res://
 │   ├── event_player.gd      # EventPlayer：事件队列播放器
 │   ├── action_panel.gd / raise_slider.gd / seat_ui.gd / card_ui.gd
 ├── assets/
-│   ├── cards/               # 扑克牌贴图（Kenney，CC0，42x60）
+│   ├── cards/               # 扑克牌贴图（playing-cards-assets，MIT，222x323）
 │   ├── avatars/ chips/ bg/  # 头像 9 / 筹码 4 / 背景 2（均程序化生成）
 │   ├── audio/               # 音效 10 个（Kenney，CC0）
 │   └── SOURCES.md           # 素材来源与许可证（audio/ 下另有一份）
@@ -187,10 +187,10 @@ func pot_size() -> int               # 全部 hand_total_bet 之和
 
 | 事件 | 字段 | 说明 |
 |---|---|---|
-| HAND_START | hand_no, button_seat, sb, bb | 一手开始 |
-| DEAL_HOLE | seat, cards | 发底牌；**AI 的 cards 为 []（不公开）**，人类为 2 张 |
+| HAND_START | hand_no, button_seat, sb, bb, alive_seats | 一手开始；alive_seats = 本手参与者座位快照 |
+| DEAL_HOLE | seat, cards, status | 发底牌；**AI 的 cards 为 []（不公开）**，人类为 2 张；status 为发牌时状态快照 |
 | ACTION_REQUIRED | seat, legal_actions, deadline_ms | 人类回合，**事件队列在此停住**等待提交 |
-| PLAYER_ACTION | seat, action, amount, chips_left | 一次有效行动（**盲注无此事件**，UI 在 DEAL_HOLE 时顺带刷新筹码/下注显示） |
+| PLAYER_ACTION | seat, action, amount, chips_left, status | 一次有效行动（**盲注无此事件**，UI 在 DEAL_HOLE 时顺带刷新筹码/下注显示）；status 为动作后状态快照 |
 | DEAL_FLOP | cards(3) | 发翻牌（3 张一并给出） |
 | DEAL_TURN / DEAL_RIVER | card | 转牌 / 河牌 |
 | ROUND_END | pot | 本轮下注收拢后的底池总额 |
@@ -294,8 +294,9 @@ GameSettings 与 AudioManager 共用一个文件、各管各的 section（写入
 | `ui` / `anim_fast` | bool（快速=0.5 倍时长） | false | GameSettings |
 | `blinds` / `starting_chips` | 100~100000 | 1000 | GameSettings，仅生效新锦标赛 |
 | `blinds` / `hands_per_level` | 1~100 | 10 | GameSettings，仅生效新锦标赛 |
+| `display` / `fullscreen` | bool | false | GameSettings，启动时应用，F11 全局切换 |
 
-GameSettings 静态接口：`apply_runtime()`（启动时把 deadline 写入 `Events.DEFAULT_DEADLINE_MS`）、`get/set_deadline_ms`、`is/set_anim_fast`、`anim_speed()`、`get_starting_chips`、`get_hands_per_level`、`set_blind_params`（clamp 双保险）、`make_config()`（按设置构造 TournamentConfig，blind_levels 表沿用默认）。
+GameSettings 静态接口：`apply_runtime()`（启动时把 deadline 写入 `Events.DEFAULT_DEADLINE_MS`、应用全屏窗口模式）、`get/set_deadline_ms`、`is/set_anim_fast`、`anim_speed()`、`is/set_fullscreen`、`get_starting_chips`、`get_hands_per_level`、`set_blind_params`（clamp 双保险）、`make_config()`（按设置构造 TournamentConfig，blind_levels 表沿用默认）。
 
 ---
 
@@ -354,7 +355,8 @@ godot --headless --path . -- --auto
 14. **名次表由 TableScene 算好传入结算场景**（冠军 = eliminated 外存活者，其余按淘汰倒序）：table 侧有 tm 上下文；A10 彩带随之落在结算界面。
 15. **UI 主题代码构建（UITheme.apply）、座位槽位编辑器手摆 Marker2D**：跟随组件代码构建惯例，免维护二进制主题资源与运行时椭圆计算。
 16. **--auto 模式动画跳过、音效保留**：无头冒烟需快速跑完，音效无害且能顺带验证加载。
-17. **素材与降级策略**：扑克牌/音效用 Kenney CC0 包；头像/筹码/背景程序化自生成（找不到 8 个差异化 CC0 头像包，自生成无版权问题）；飞行筹码按金额区间着色不印面值（28px 不可读，金额由座位标签显示）；贴图/音效缺失一律降级不报错（色块占位、push_warning），表现层不允许因素材问题崩溃。
+17. **素材与降级策略**：扑克牌用 playing-cards-assets（MIT，原 Kenney 像素牌 42×60 放大模糊已弃用）、音效用 Kenney CC0 包；头像/筹码/背景/空槽位框程序化自生成（找不到 8 个差异化 CC0 头像包，自生成无版权问题）；飞行筹码按金额区间着色不印面值（28px 不可读，金额由座位标签显示）；贴图/音效缺失一律降级不报错（色块占位、push_warning），表现层不允许因素材问题崩溃。
+18. **事件携带状态快照（alive_seats / status），UI 不读实时 PlayerState 状态**：整手牌同步跑完后事件才逐条回放，被淘汰者的实时 status 已是 OUT；若 UI 读实时状态，全下（或将淘汰）的玩家会从手牌开始就被显示成"出局"。
 
 ---
 
@@ -369,7 +371,7 @@ res://assets/cards/card_<花色>_<点数>.png
 特殊：card_back.png（牌背）、card_empty.png（空槽位框）
 ```
 
-源素材为 Kenney Playing Cards Pack（CC0）64×64 竖版牌，已按不透明区域裁剪为 42×60；显示尺寸 `CardUI.SIZE = 56×80`。许可证 `assets/cards/Kenney-License.txt`。
+源素材为 hayeah/playing-cards-assets（MIT，图案源自 Byron Knoll 公有领域矢量牌）222×323 高分辨率 PNG；原图只有图案层无牌身，已垫白底圆角牌身（圆角半径 12），牌背取 `back@2x.png`（314×476）改色为蓝底白纹 + 白边圆角，空槽位框程序化生成；显示尺寸 `CardUI.SIZE = 56×80`。许可证 `assets/cards/LICENSE-playing-cards-assets.txt`。
 
 ### 9.2 头像（core/ai/ai_profiles.gd → ui/seat_ui.gd）
 

@@ -127,6 +127,10 @@ func on_hand_start(event: Dictionary) -> void:
 	for seat in seats:
 		var p := tm.players[seat.seat_index]
 		seat.bind_player(p)
+		# 状态须用手牌开始时的快照（事件回放时整手已跑完，本手被淘汰者实时状态已是 OUT）
+		var start_status: int = PlayerState.Status.ACTIVE if event.alive_seats.has(seat.seat_index) \
+				else PlayerState.Status.OUT
+		seat.set_status(start_status)
 		seat.hide_cards()
 		seat.set_dealer(p.seat_index == event.button_seat)
 		seat.set_highlight(false)
@@ -146,11 +150,12 @@ func on_deal_hole(event: Dictionary) -> void:
 			t.tween_property(fly, "position", target, 0.15 * ANIM_SPEED)
 			await t.finished
 			fly.queue_free()
-	# 盲注在发底牌前静默扣除，这里顺带刷新筹码与下注显示
+	# 盲注在发底牌前静默扣除，这里顺带刷新筹码与下注显示；状态用发牌时的快照
 	var p := tm.players[event.seat]
 	seat.set_chips(p.chips)
 	seat.set_bet(p.current_bet)
-	seat.refresh_status(p)
+	var deal_status: int = event.status
+	seat.set_status(deal_status)
 	if event.cards.is_empty():
 		seat.show_backs()
 	else:
@@ -173,7 +178,8 @@ func on_player_action(event: Dictionary) -> void:
 				AudioManager.play(&"fold")
 	seat.set_chips(event.chips_left)
 	seat.set_bet(p.current_bet)
-	seat.refresh_status(p)
+	var action_status: int = event.status
+	seat.set_status(action_status)
 	for s in seats:
 		s.set_highlight(s.seat_index == event.seat)
 	var text: String = ACTION_NAMES.get(event.action, "?")

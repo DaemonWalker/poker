@@ -50,7 +50,10 @@ func start() -> void:
 		p.status = PlayerState.Status.ACTIVE
 		_chips_at_start[p.seat_index] = p.chips
 
-	events.append(Events.hand_start(hand_no, button_seat, small_blind, big_blind))
+	var alive_seats: Array[int] = []
+	for p in players:
+		alive_seats.append(p.seat_index)
+	events.append(Events.hand_start(hand_no, button_seat, small_blind, big_blind, alive_seats))
 	_post_blinds()
 	_deal_hole()
 	_start_betting_round(Street.PREFLOP)
@@ -71,7 +74,7 @@ func submit_human_action(action: Dictionary) -> bool:
 	var p := _by_seat(waiting_seat)
 	if not round.apply_action(p, action):
 		return false  # 保持挂起，由表现层重试
-	events.append(Events.player_action(p.seat_index, action.get("type", -1), action.get("amount", 0), p.chips))
+	events.append(Events.player_action(p.seat_index, action.get("type", -1), action.get("amount", 0), p.chips, p.status))
 	waiting_seat = -1
 	run()
 	return true
@@ -138,7 +141,7 @@ func _step() -> void:
 		else:
 			action = {"type": BettingRound.ActionType.FOLD}
 		round.apply_action(actor, action)
-	events.append(Events.player_action(actor.seat_index, action.get("type", -1), action.get("amount", 0), actor.chips))
+	events.append(Events.player_action(actor.seat_index, action.get("type", -1), action.get("amount", 0), actor.chips, actor.status))
 
 
 # ---- 盲注与发牌 ----
@@ -174,7 +177,7 @@ func _deal_hole() -> void:
 			p.hole_cards.append(deck.draw())
 			seat = _next_seat_after(seat)
 	for p in players:
-		events.append(Events.deal_hole(p.seat_index, p.hole_cards.duplicate() if p.is_human else []))
+		events.append(Events.deal_hole(p.seat_index, p.hole_cards.duplicate() if p.is_human else [], p.status))
 
 
 # ---- 下注轮 ----

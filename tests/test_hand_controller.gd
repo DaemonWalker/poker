@@ -149,3 +149,45 @@ func test_ai_hole_hidden() -> void:
 	drive_hand(hc, func(_s, legal):
 		return check_action() if legal.can_check else call_action())
 	expect_eq(players[0].chips + players[1].chips, 2000, "筹码守恒")
+
+
+## 事件须携带状态快照：全下后输掉手牌的玩家终局 status 已是 OUT，
+## 但 HAND_START/DEAL_HOLE/PLAYER_ACTION 事件里必须保留当时状态（否则 UI 回放时提前显示"出局"）
+func test_event_status_snapshot() -> void:
+	var players := _make_human_players([1000, 1000] as Array[int])
+	var hc := HandController.new(players, 0, 10, 20, 1, AIDecider.new(1), 1)
+	# 发牌顺序（单挑）：p0=2h, p1=As, p0=3d, p1=Ac, 公共牌 8s 9h Tc Ks Qd；一对 A 胜
+	hc.deck = rigged_deck(cards("2h As 3d Ac 8s 9h Tc Ks Qd"))
+	hc.start()
+
+	var all_events: Array[Dictionary] = []
+	all_events.append_array(hc.pop_events())
+	drive_hand(hc, func(_s, _l): return all_in())
+	all_events.append_array(hc.pop_events())
+	check(hc.is_finished(), "手牌应结束")
+
+	expect_eq(players[0].status, PlayerState.Status.OUT, "全下输掉后座位 0 应淘汰")
+
+	var start_seen := false
+	var deal_status := -1
+	var action_status := -1
+	var eliminated_seen := false
+	for e in all_events:
+		match e.type:
+			Events.Type.HAND_START:
+				start_seen = true
+				expect_eq(e.alive_seats, [0, 1] as Array[int], "手牌开始时两座均应存活")
+			Events.Type.DEAL_HOLE:
+				if e.seat == 0:
+					deal_status = e.status
+			Events.Type.PLAYER_ACTION:
+				if e.seat == 0:
+					expect_eq(e.action, BettingRound.ActionType.ALL_IN, "座位 0 应为全下动作")
+					action_status = e.status
+			Events.Type.ELIMINATED:
+				if e.seat == 0:
+					eliminated_seen = true
+	check(start_seen, "应有 HAND_START 事件")
+	expect_eq(deal_status, PlayerState.Status.ACTIVE, "发牌时座位 0 应为 ACTIVE 快照")
+	expect_eq(action_status, PlayerState.Status.ALL_IN, "全下动作事件应带 ALL_IN 快照而非终局 OUT")
+	check(eliminated_seen, "座位 0 应有 ELIMINATED 事件")
