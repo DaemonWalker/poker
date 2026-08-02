@@ -59,6 +59,26 @@ static func set_deadline_ms(ms: int) -> void:
 	_save_value("gameplay", "deadline_ms", ms)
 
 
+# ---- 难度（gameplay/difficulty，仅生效于之后新建的锦标赛） ----
+
+enum Difficulty { DEFAULT, EASY }
+
+
+static func get_difficulty() -> int:
+	var cfg := ConfigFile.new()
+	if cfg.load(SETTINGS_PATH) == OK:
+		return int(cfg.get_value("gameplay", "difficulty", Difficulty.DEFAULT))
+	return Difficulty.DEFAULT
+
+
+static func set_difficulty(d: int) -> void:
+	_save_value("gameplay", "difficulty", d)
+
+
+static func is_easy_mode() -> bool:
+	return get_difficulty() == Difficulty.EASY
+
+
 # ---- 动画速度（ui/anim_fast，快速 = 0.5，标准 = 1.0） ----
 
 static func is_anim_fast() -> bool:
@@ -106,6 +126,7 @@ static func make_config() -> TournamentManager.TournamentConfig:
 	var config := TournamentManager.TournamentConfig.default()
 	config.starting_chips = get_starting_chips()
 	config.hands_per_level = get_hands_per_level()
+	config.easy_mode = is_easy_mode()
 	return config
 
 

@@ -139,7 +139,7 @@ static func settle(pots: Array, players: Array[PlayerState],
 
 ```gdscript
 func _init(p_players, p_button_seat, p_small_blind, p_big_blind,
-        p_deck_seed: int, p_ai_decider: AIDecider, p_hand_no: int)
+        p_deck_seed: int, p_ai_decider: AIDecider, p_hand_no: int, p_rig_seat := -1)
 func start() -> void                 # 初始化 → 收盲注 → 发底牌 → 翻牌前下注轮 → run()
 func run() -> void                   # 推进到挂起点或结束
 func submit_human_action(action: Dictionary) -> bool  # 非法拒绝并保持挂起可重试
@@ -148,6 +148,8 @@ func is_waiting() -> bool            # waiting_seat >= 0
 func is_finished() -> bool
 func pot_size() -> int               # 全部 hand_total_bet 之和
 ```
+
+`p_rig_seat >= 0` 时启用**简单模式洗牌**（`_rig_deck`）：正常洗牌后按真实发牌顺序（底牌座位序 + 之后 5 张公共牌）模拟整手布局，反复以派生种子（`base_seed + attempt`）重洗，直到该座位**假定摊牌全场唯一最强**——起手牌因此更强、公共牌更有利。上限 `RIG_MAX_ATTEMPTS = 100`（9 人局单次命中约 1/9，几乎必然成功），保底保留击败对手最多的一局。同 `base_seed` 下洗牌序列确定，存档恢复后可复现。
 
 流程：HAND_START → **盲注静默扣除**（`_post_blind` 直接改筹码/下注，**不产生 PLAYER_ACTION 事件**；筹码不足按全下）→ 逐张发底牌（从小盲位起，DEAL_HOLE ×人数；单挑时按钮位下小盲、从按钮位发起）→ 四轮下注（每轮结束 ROUND_END，随后发公共牌事件）→ 摊牌（SHOWDOWN，公开全部未弃牌者手牌与牌型名）或提前判胜（仅剩一名未弃牌者，直接 POT_AWARD 不摊牌、牌型名为空串）→ PotManager 结算（POT_AWARD ×n）→ 淘汰检测（ELIMINATED ×n，**同手淘汰者按本手开始时筹码多少排名，多者名次靠前**，名次从本手开始时的存活数倒排）→ HAND_END。
 
@@ -161,9 +163,9 @@ func pot_size() -> int               # 全部 hand_total_bet 之和
 
 锦标赛调度 + 整体序列化。持有 `config / players / button_seat / blind_level / hands_played / hand_count_total / eliminated / finished` 与 `_rng`（`RandomNumberGenerator`）。
 
-- `TournamentConfig`（内部类）：`starting_chips=1000`、`hands_per_level=10`、`blind_levels` 10 级表（10/20…200/400）；`blinds_at(level)` 超表后末级 × `1 << (level - 9)` 翻倍；`to_dict/from_dict`。
+- `TournamentConfig`（内部类）：`starting_chips=1000`、`hands_per_level=10`、`blind_levels` 10 级表（10/20…200/400）、`easy_mode=false`（简单模式，洗牌偏向人类）；`blinds_at(level)` 超表后末级 × `1 << (level - 9)` 翻倍；`to_dict/from_dict`。
 - `start_new(config, ai_count, rng_seed := 0)`：人类坐 0 号位（名字"你"、`avatar_human`）；AI 身份从 `AIProfiles.IDENTITIES` 洗牌抽取（不重复），风格按 `IDENTITY_PREFERRED_PROFILE` 配对；按钮位随机。开局即存档。
-- `run_next_hand()`：`deck_seed := _rng.randi()`，以**同一手牌种子**构造 Deck 洗牌与 `AIDecider.new(deck_seed)`——存档恢复后决策序列可复现；执行一手并转发事件；手牌结束走 `_after_hand_end`。
+- `run_next_hand()`：`deck_seed := _rng.randi()`，以**同一手牌种子**构造 Deck 洗牌与 `AIDecider.new(deck_seed)`——存档恢复后决策序列可复现；`config.easy_mode` 时把人类座位作为 `rig_seat` 传入 HandController；执行一手并转发事件；手牌结束走 `_after_hand_end`。
 - `_after_hand_end`：记录淘汰（按 ELIMINATED 事件顺序）→ 更新战绩（总手数、人类赢池、筹码峰值）→ 胜负判定（人类出局 → TOURNAMENT_LOSE{rank}；仅剩人类 → TOURNAMENT_WIN）→ 按钮移到下一存活座位 → 够手数则盲注升级（BLIND_UP）→ 战绩落盘 + 自动存档。`_tournament_end` 时 `save_manager.clear()` 清进度存档。
 - 其余接口：`submit_human_action(action)` / `is_waiting_for_human()` / `pop_events()` / `alive_count()` / `human()` / `load_save() -> bool`（无存档或版本不匹配返回 false）/ `to_dict` / `from_dict`。
 
@@ -295,8 +297,9 @@ GameSettings 与 AudioManager 共用一个文件、各管各的 section（写入
 | `blinds` / `starting_chips` | 100~100000 | 1000 | GameSettings，仅生效新锦标赛 |
 | `blinds` / `hands_per_level` | 1~100 | 10 | GameSettings，仅生效新锦标赛 |
 | `display` / `fullscreen` | bool | false | GameSettings，启动时应用，F11 全局切换 |
+| `gameplay` / `difficulty` | int（0=默认 1=简单） | 0 | GameSettings，仅生效新锦标赛（经 `make_config()` 写入 `easy_mode`） |
 
-GameSettings 静态接口：`apply_runtime()`（启动时把 deadline 写入 `Events.DEFAULT_DEADLINE_MS`、应用全屏窗口模式）、`get/set_deadline_ms`、`is/set_anim_fast`、`anim_speed()`、`is/set_fullscreen`、`get_starting_chips`、`get_hands_per_level`、`set_blind_params`（clamp 双保险）、`make_config()`（按设置构造 TournamentConfig，blind_levels 表沿用默认）。
+GameSettings 静态接口：`apply_runtime()`（启动时把 deadline 写入 `Events.DEFAULT_DEADLINE_MS`、应用全屏窗口模式）、`get/set_deadline_ms`、`is/set_anim_fast`、`anim_speed()`、`is/set_fullscreen`、`get/set_difficulty`、`is_easy_mode`、`get_starting_chips`、`get_hands_per_level`、`set_blind_params`（clamp 双保险）、`make_config()`（按设置构造 TournamentConfig，blind_levels 表沿用默认，附带 `easy_mode`）。
 
 ---
 
@@ -357,6 +360,7 @@ godot --headless --path . -- --auto
 16. **--auto 模式动画跳过、音效保留**：无头冒烟需快速跑完，音效无害且能顺带验证加载。
 17. **素材与降级策略**：扑克牌用 playing-cards-assets（MIT，原 Kenney 像素牌 42×60 放大模糊已弃用）、音效用 Kenney CC0 包；头像/筹码/背景/空槽位框程序化自生成（找不到 8 个差异化 CC0 头像包，自生成无版权问题）；飞行筹码按金额区间着色不印面值（28px 不可读，金额由座位标签显示）；贴图/音效缺失一律降级不报错（色块占位、push_warning），表现层不允许因素材问题崩溃。
 18. **事件携带状态快照（alive_seats / status），UI 不读实时 PlayerState 状态**：整手牌同步跑完后事件才逐条回放，被淘汰者的实时 status 已是 OUT；若 UI 读实时状态，全下（或将淘汰）的玩家会从手牌开始就被显示成"出局"。
+19. **简单模式用"假定摊牌必胜"重洗实现，而非改 AI 或改赔率**：只动牌堆顺序，规则/结算/事件零侵入；派生种子（`base_seed + attempt`）保证同种子可复现，存档语义不受影响；难度随 TournamentConfig 快照，进行中锦标赛不被半路改。
 
 ---
 

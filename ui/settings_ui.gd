@@ -1,5 +1,5 @@
 class_name SettingsUI extends Control
-## 设置界面：音量 / 行动倒计时 / 动画速度 / 盲注参数（高级）。
+## 设置界面：音量 / 行动倒计时 / 动画速度 / 难度 / 盲注参数（高级）。
 ## 全部持久化到 user://save/settings.cfg（GameSettings 与 AudioManager 各管各的段）。
 
 var _deadline_check: CheckBox
@@ -95,6 +95,19 @@ func _ready() -> void:
 	anim_row.add_child(anim_option)
 	anim_option.item_selected.connect(_on_anim_selected)
 
+	# 难度：默认 / 简单（洗牌偏向玩家：起手更强、公共牌更有利），新锦标赛生效
+	var diff_row := HBoxContainer.new()
+	diff_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(diff_row)
+	diff_row.add_child(_make_label("难度"))
+	var diff_option := OptionButton.new()
+	diff_option.add_item("默认")
+	diff_option.add_item("简单")
+	diff_option.selected = GameSettings.get_difficulty()
+	diff_row.add_child(diff_option)
+	diff_row.add_child(_make_label("（简单：你的手牌更有利，新锦标赛生效）"))
+	diff_option.item_selected.connect(_on_difficulty_selected)
+
 	# 盲注参数（高级）：起始筹码 / 每级手数，仅对之后新建的锦标赛生效
 	vbox.add_child(HSeparator.new())
 	var adv := _make_label("盲注参数（高级，仅对之后新建的锦标赛生效）")
@@ -156,6 +169,11 @@ func _apply_deadline() -> void:
 func _on_anim_selected(idx: int) -> void:
 	AudioManager.play(&"click")
 	GameSettings.set_anim_fast(idx == 1)
+
+
+func _on_difficulty_selected(idx: int) -> void:
+	AudioManager.play(&"click")
+	GameSettings.set_difficulty(idx)
 
 
 ## 盲注参数：SpinBox 限定合法范围，写入时再 clamp 一次双保险。

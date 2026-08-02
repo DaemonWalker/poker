@@ -28,8 +28,9 @@ var _alive_at_start := 0
 
 
 ## p_players 为本手参与者（筹码 > 0），调用前请确保按钮/盲注已确定。
+## p_rig_seat >= 0 时启用简单模式洗牌：重洗至该座位假定摊牌必胜（起手强、公共牌有利）。
 func _init(p_players: Array[PlayerState], p_button_seat: int, p_small_blind: int, p_big_blind: int,
-		p_deck_seed: int, p_ai_decider: AIDecider, p_hand_no: int) -> void:
+		p_deck_seed: int, p_ai_decider: AIDecider, p_hand_no: int, p_rig_seat: int = -1) -> void:
 	players = p_players
 	button_seat = p_button_seat
 	small_blind = p_small_blind
@@ -38,6 +39,8 @@ func _init(p_players: Array[PlayerState], p_button_seat: int, p_small_blind: int
 	hand_no = p_hand_no
 	deck = Deck.new()
 	deck.shuffle(p_deck_seed)
+	if p_rig_seat >= 0 and _by_seat(p_rig_seat) != null:
+		_rig_deck(p_rig_seat, p_deck_seed)
 
 
 ## 启动本手牌：初始化玩家手牌状态、收盲注、发底牌，然后推进到挂起点或结束。
@@ -178,6 +181,66 @@ func _deal_hole() -> void:
 			seat = _next_seat_after(seat)
 	for p in players:
 		events.append(Events.deal_hole(p.seat_index, p.hole_cards.duplicate() if p.is_human else [], p.status))
+
+
+# ---- 简单模式洗牌 ----
+
+## 重洗次数上限。9 人局单次洗牌玩家假定摊牌胜率约 1/9，100 次几乎必然命中。
+const RIG_MAX_ATTEMPTS := 100
+
+## 简单模式：反复洗牌，直到 rig_seat 在"假定摊牌"（按当前发牌顺序摸完 5 张公共牌）
+## 下持有全场唯一最强牌——起手牌因此更强，公共牌也更倾向于成全玩家。
+## 达到尝试上限时保留玩家击败对手数最多的一局（保底，实践中几乎不会触发）。
+func _rig_deck(rig_seat: int, base_seed: int) -> void:
+	var seats := _deal_order()
+	var n := players.size()
+	var best_cards: Array[Card] = []
+	var best_beaten := -1
+	for attempt in RIG_MAX_ATTEMPTS:
+		if attempt > 0:
+			# 派生种子保证同一 base_seed 下洗牌序列可复现；base_seed 为 0 时本来就是随机
+			deck.shuffle(base_seed + attempt if base_seed != 0 else 0)
+		var beaten := _showdown_beaten_count(rig_seat, seats)
+		if beaten == n - 1:
+			return  # 命中：全场唯一最强
+		if beaten > best_beaten:
+			best_beaten = beaten
+			best_cards = deck.cards.duplicate()
+	deck.cards = best_cards
+
+
+## 底牌发牌座位顺序（与 _deal_hole 一致：小盲位开始顺时针，单挑时按钮位先发）。
+func _deal_order() -> Array[int]:
+	var seats: Array[int] = []
+	var seat := _next_seat_after(button_seat if players.size() > 2 else button_seat - 1)
+	for _j in players.size():
+		seats.append(seat)
+		seat = _next_seat_after(seat)
+	return seats
+
+
+## 按当前牌堆模拟完整发牌，返回 rig_seat 假定摊牌严格击败的对手数。
+## 牌堆顶为数组末尾：第 k 张摸走的是 cards[size-1-k]，前 2n 张为底牌，之后 5 张公共牌。
+func _showdown_beaten_count(rig_seat: int, seats: Array[int]) -> int:
+	var n := players.size()
+	var top := deck.cards.size() - 1
+	var community_sim: Array[Card] = []
+	for k in range(2 * n, 2 * n + 5):
+		community_sim.append(deck.cards[top - k])
+	var rig_idx := seats.find(rig_seat)
+	var rig_seven: Array[Card] = [deck.cards[top - rig_idx], deck.cards[top - n - rig_idx]]
+	rig_seven.append_array(community_sim)
+	var rig_rank := HandEvaluator.evaluate(rig_seven)
+	var beaten := 0
+	for i in n:
+		if i == rig_idx:
+			continue
+		var seven: Array[Card] = [deck.cards[top - i], deck.cards[top - n - i]]
+		seven.append_array(community_sim)
+		if HandEvaluator.compare(HandEvaluator.evaluate(seven), rig_rank) >= 0:
+			return beaten  # 有人不弱于玩家，本次洗牌不成立（短路）
+		beaten += 1
+	return beaten
 
 
 # ---- 下注轮 ----

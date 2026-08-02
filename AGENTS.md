@@ -12,7 +12,7 @@ Godot 4.x / GDScript 的单机无限注德州扑克锦标赛游戏（Windows 桌
 # 新增 class_name 脚本或新资源后必须先跑一次（生成全局类缓存，否则报 "Could not find type"）
 godot --headless --path . --import
 
-# 逻辑层单元测试：435 项断言，改 core/ 后必跑
+# 逻辑层单元测试：453 项断言，改 core/ 后必跑
 godot --headless --path . --script tests/run_tests.gd
 
 # UI 全链路冒烟：AI 代打完整场自动 quit，0 报错为通过；改 ui/、scenes/ 后必跑
@@ -59,4 +59,4 @@ godot --path .
 
 ## 环境备忘
 
-- 项目根不是 git 仓库（用户已知悉），改动无版本控制兜底，动大手术前提醒用户备份。
+- 项目根是 git 仓库，提交前确认 `git status` 只包含本次改动；Godot 可执行文件在 `E:\ProgramData\godot\godot.exe`（不在 PATH，命令里的 `godot` 需替换为全路径）。

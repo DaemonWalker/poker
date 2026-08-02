@@ -12,6 +12,8 @@ class TournamentConfig extends RefCounted:
 		[60, 120], [80, 160], [100, 200], [150, 300], [200, 400],
 	]
 	var hands_per_level: int = 10
+	## 简单模式：洗牌偏向人类（起手更强、公共牌更有利），仅对新建锦标赛生效。
+	var easy_mode: bool = false
 
 	static func default() -> TournamentConfig:
 		return TournamentConfig.new()
@@ -25,12 +27,14 @@ class TournamentConfig extends RefCounted:
 		return [base[0] * factor, base[1] * factor]
 
 	func to_dict() -> Dictionary:
-		return {"starting_chips": starting_chips, "blind_levels": blind_levels, "hands_per_level": hands_per_level}
+		return {"starting_chips": starting_chips, "blind_levels": blind_levels,
+				"hands_per_level": hands_per_level, "easy_mode": easy_mode}
 
 	func from_dict(d: Dictionary) -> void:
 		starting_chips = d.get("starting_chips", starting_chips)
 		blind_levels = d.get("blind_levels", blind_levels)
 		hands_per_level = d.get("hands_per_level", hands_per_level)
+		easy_mode = d.get("easy_mode", easy_mode)
 
 
 var config: TournamentConfig
@@ -113,8 +117,14 @@ func run_next_hand() -> void:
 	var blinds: Array = config.blinds_at(blind_level)
 	# AI 决策器按手牌种子播种：同一手牌种子 → 同一决策序列，存档恢复后可复现
 	var deck_seed := _rng.randi()
+	# 简单模式：洗牌偏向人类座位（人类已淘汰则锦标赛已结束，这里必然找得到）
+	var rig_seat := -1
+	if config.easy_mode:
+		for p in in_hand:
+			if p.is_human:
+				rig_seat = p.seat_index
 	hand = HandController.new(in_hand, button_seat, blinds[0], blinds[1],
-			deck_seed, AIDecider.new(deck_seed), hand_count_total)
+			deck_seed, AIDecider.new(deck_seed), hand_count_total, rig_seat)
 	hand.start()
 	var hand_events := hand.pop_events()
 	_events.append_array(hand_events)
