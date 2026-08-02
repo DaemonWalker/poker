@@ -41,11 +41,21 @@ func _build(params: Dictionary) -> void:
 	vbox.add_theme_constant_override("separation", 12)
 	center.add_child(vbox)
 
-	# 冠军奖杯视觉（占位：大号 🏆 标题，素材替换属 M8）
+	# 冠军奖杯视觉：Blender 渲染贴图（assets/trophy/trophy.png），贴图缺失时降级为 🏆 文本
+	var trophy_tex: Texture2D = null
+	if win and ResourceLoader.exists("res://assets/trophy/trophy.png"):
+		trophy_tex = load("res://assets/trophy/trophy.png")
+	if trophy_tex != null:
+		var trophy := TextureRect.new()
+		trophy.texture = trophy_tex
+		trophy.custom_minimum_size = Vector2(128, 128)
+		trophy.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		trophy.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		vbox.add_child(trophy)
 	var title := Label.new()
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	if win:
-		title.text = "🏆 夺冠！"
+		title.text = "夺冠！" if trophy_tex != null else "🏆 夺冠！"
 		title.add_theme_font_size_override("font_size", 48)
 		title.add_theme_color_override("font_color", Color(1, 0.85, 0.2))
 	else:

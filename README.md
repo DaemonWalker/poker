@@ -41,7 +41,7 @@ core/       逻辑层（纯 RefCounted，可无头单测）：规则/下注/边�
 core/ai/    AI 决策器、牌力启发式评分、风格与身份预设
 ui/         表现层脚本：路由、牌桌、组件（座位/卡牌/操作面板）、设置、主题、音频
 scenes/     场景：main（路由器）、main_menu、table、result、stats、settings
-assets/     素材：cards（Kenney，CC0）、avatars/chips/bg（程序化生成）、audio（CC0 音效）
+assets/     素材：cards（Kenney，CC0）、avatars（程序化生成）、chips/bg/trophy（Blender 渲染）、audio（CC0 音效）
 tests/      逻辑层无头单元测试与批量模拟
 docs/       文档（见下）
 ```
@@ -57,4 +57,4 @@ docs/       文档（见下）
 
 ## 素材与许可证
 
-扑克牌贴图来自 hayeah/playing-cards-assets（MIT，图案源自 Byron Knoll 公有领域矢量牌）；音效来自 Kenney Casino Audio / Interface Sounds（CC0，经 OpenGameArt 镜像）；头像、筹码、桌布、背景、空槽位框为程序化生成（无版权问题）。明细见 `assets/SOURCES.md`。
+扑克牌贴图来自 hayeah/playing-cards-assets（MIT，图案源自 Byron Knoll 公有领域矢量牌）；音效来自 Kenney Casino Audio / Interface Sounds（CC0，经 OpenGameArt 镜像）；头像、空槽位框为程序化生成，筹码、桌布、背景、奖杯为 Blender 无头渲染（脚本 `tools/blender/`），均为自生成素材（无版权问题）。明细见 `assets/SOURCES.md`。

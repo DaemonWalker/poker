@@ -60,7 +60,8 @@ res://
 │   ├── action_panel.gd / raise_slider.gd / seat_ui.gd / card_ui.gd
 ├── assets/
 │   ├── cards/               # 扑克牌贴图（playing-cards-assets，MIT，222x323）
-│   ├── avatars/ chips/ bg/  # 头像 9 / 筹码 4 / 背景 2（均程序化生成）
+│   ├── avatars/             # 头像 9（程序化生成）
+│   ├── chips/ bg/ trophy/   # 筹码 4×2 视角 / 背景 2 / 奖杯 1（均 Blender 渲染，脚本 tools/blender/）
 │   ├── audio/               # 音效 10 个（Kenney，CC0）
 │   └── SOURCES.md           # 素材来源与许可证（audio/ 下另有一份）
 └── tests/                   # 无头模式测试
@@ -360,7 +361,7 @@ godot --headless --path . -- --auto
 14. **名次表由 TableScene 算好传入结算场景**（冠军 = eliminated 外存活者，其余按淘汰倒序）：table 侧有 tm 上下文；A10 彩带随之落在结算界面。
 15. **UI 主题代码构建（UITheme.apply）、座位槽位编辑器手摆 Marker2D**：跟随组件代码构建惯例，免维护二进制主题资源与运行时椭圆计算。
 16. **--auto 模式动画跳过、音效保留**：无头冒烟需快速跑完，音效无害且能顺带验证加载。
-17. **素材与降级策略**：扑克牌用 playing-cards-assets（MIT，原 Kenney 像素牌 42×60 放大模糊已弃用）、音效用 Kenney CC0 包；头像/筹码/背景/空槽位框程序化自生成（找不到 8 个差异化 CC0 头像包，自生成无版权问题）；飞行筹码按金额区间着色不印面值（28px 不可读，金额由座位标签显示）；贴图/音效缺失一律降级不报错（色块占位、push_warning），表现层不允许因素材问题崩溃。
+17. **素材与降级策略**：扑克牌用 playing-cards-assets（MIT，原 Kenney 像素牌 42×60 放大模糊已弃用）、音效用 Kenney CC0 包；头像/空槽位框程序化自生成（找不到 8 个差异化 CC0 头像包，自生成无版权问题），筹码/背景/奖杯为 Blender 无头渲染（脚本 `tools/blender/`，色调对齐原程序化版深绿配色）；飞行筹码按金额区间着色不印面值（28px 不可读，金额由座位标签显示）；贴图/音效缺失一律降级不报错（色块占位、push_warning），表现层不允许因素材问题崩溃。
 18. **事件携带状态快照（alive_seats / status），UI 不读实时 PlayerState 状态**：整手牌同步跑完后事件才逐条回放，被淘汰者的实时 status 已是 OUT；若 UI 读实时状态，全下（或将淘汰）的玩家会从手牌开始就被显示成"出局"。
 19. **简单模式用"假定摊牌必胜"重洗实现，而非改 AI 或改赔率**：只动牌堆顺序，规则/结算/事件零侵入；派生种子（`base_seed + attempt`）保证同种子可复现，存档语义不受影响；难度随 TournamentConfig 快照，进行中锦标赛不被半路改。
 
@@ -385,10 +386,10 @@ res://assets/cards/card_<花色>_<点数>.png
 
 ### 9.3 筹码（ui/table_scene.gd `_chip_texture`）
 
-`res://assets/chips/chip_<档>.png`（32×32，程序化生成），飞行筹码按金额区间选档：**chip_white <100、chip_red <500、chip_blue <1000、chip_black ≥1000**；文件缺失降级为金色圆块。座位前的下注额始终是文字标签，不堆筹码。
+`res://assets/chips/chip_<档>.png`（256×256 顶视，Blender 渲染；另有 `_tilt` 45° 斜视版备用），飞行筹码按金额区间选档：**chip_white <100、chip_red <500、chip_blue <1000、chip_black ≥1000**；文件缺失降级为金色圆块。座位前的下注额始终是文字标签，不堆筹码。
 
 ### 9.4 背景与音效
 
-- `assets/bg/table_felt.png`（1280×720 桌布，table.tscn）、`assets/bg/menu_bg.png`（主菜单/设置/结算/战绩共用），均程序化生成。
+- `assets/bg/table_felt.png`（1280×720 桌布，table.tscn）、`assets/bg/menu_bg.png`（主菜单/设置/结算/战绩共用），均为 Blender 无头渲染（脚本 `tools/blender/`，色调对齐原程序化版深绿配色）；`assets/trophy/trophy.png`（512×512 带 alpha 金奖杯，result_ui 夺冠标题）同为 Blender 渲染。
 - 音效名 → 文件映射见 `AudioManager.SFX`（10 项，GDD 第 7 章）；原始出处（Kenney Casino Audio 1.1 / Interface Sounds，CC0，经 OpenGameArt 镜像）与逐文件对照见 `assets/audio/SOURCES.md`，许可证 `assets/audio/Kenney-License.txt`。
 - 全部素材的来源与生成方式记录在 `assets/SOURCES.md` 与 `assets/audio/SOURCES.md`，替换素材时同步更新这两份清单。
