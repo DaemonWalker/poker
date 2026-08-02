@@ -1,18 +1,23 @@
 class_name SeatUI extends PanelContainer
-## 单个座位组件：名字 / 筹码 / 本轮下注 / 状态标签 / 庄家标记 / 两张底牌。
-## 占位图形阶段：PanelContainer + Label + CardUI。
+## 单个座位角色卡：大头像框 + 名字/状态/筹码信息列 + 两张底牌。
+## RPG 预留：头像框描边可承载职业/稀有度色；_skill_row 为技能图标槽位（默认隐藏）。
 
-const WIDTH := 150.0
+const WIDTH := 170.0
+
+const COLOR_BORDER := Color(0.30, 0.33, 0.37)
+const COLOR_HIGHLIGHT := Color(0.95, 0.78, 0.30)
 
 var seat_index: int = -1
 
-var _name_label: Label
+var _avatar_frame: PanelContainer
 var _avatar: TextureRect
+var _name_label: Label
 var _chips_label: Label
 var _bet_label: Label
 var _status_label: Label
-var _dealer_label: Label
+var _dealer_badge: PanelContainer
 var _thinking_label: Label
+var _skill_row: HBoxContainer
 var _cards: Array[CardUI] = []
 var _bg: StyleBoxFlat
 var _highlight_tween: Tween
@@ -22,45 +27,80 @@ var _thinking_tween: Tween
 func _ready() -> void:
 	custom_minimum_size = Vector2(WIDTH, 0)
 	_bg = StyleBoxFlat.new()
-	_bg.bg_color = Color(0.12, 0.14, 0.18, 0.9)
-	_bg.set_corner_radius_all(8)
+	_bg.bg_color = Color(0.10, 0.11, 0.14, 0.92)
+	_bg.set_corner_radius_all(10)
 	_bg.set_border_width_all(2)
-	_bg.border_color = Color(0.3, 0.32, 0.36)
+	_bg.border_color = COLOR_BORDER
+	_bg.content_margin_left = 8
+	_bg.content_margin_right = 8
+	_bg.content_margin_top = 6
+	_bg.content_margin_bottom = 6
 	add_theme_stylebox_override("panel", _bg)
 
 	var root := VBoxContainer.new()
-	root.add_theme_constant_override("separation", 2)
+	root.add_theme_constant_override("separation", 4)
 	add_child(root)
 
-	# 第一行：头像 + 庄家标记 + 名字 + 状态
+	# 第一行：头像框 + 信息列
 	var top := HBoxContainer.new()
-	top.add_theme_constant_override("separation", 6)
+	top.add_theme_constant_override("separation", 8)
 	root.add_child(top)
 
-	# 头像（assets/avatars/<avatar_id>.png，找不到文件时隐藏不报错）
+	# 头像框（RPG 预留：描边色未来可表达职业/稀有度，当前统一中性描边）
+	_avatar_frame = PanelContainer.new()
+	_avatar_frame.custom_minimum_size = Vector2(56, 56)
+	var af_style := StyleBoxFlat.new()
+	af_style.bg_color = Color(0.07, 0.08, 0.10)
+	af_style.set_corner_radius_all(10)
+	af_style.set_border_width_all(2)
+	af_style.border_color = Color(0.40, 0.43, 0.47)
+	_avatar_frame.add_theme_stylebox_override("panel", af_style)
+	_avatar_frame.visible = false
+	top.add_child(_avatar_frame)
+
+	# 头像（assets/avatars/<avatar_id>.png，找不到文件时连框隐藏不报错）
 	_avatar = TextureRect.new()
-	_avatar.custom_minimum_size = Vector2(28, 28)
 	_avatar.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_avatar.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	_avatar.visible = false
-	top.add_child(_avatar)
+	_avatar_frame.add_child(_avatar)
 
-	_dealer_label = Label.new()
-	_dealer_label.text = "D"
-	_dealer_label.add_theme_font_size_override("font_size", 14)
-	_dealer_label.add_theme_color_override("font_color", Color(1, 0.85, 0.2))
-	_dealer_label.visible = false
-	top.add_child(_dealer_label)
+	# 信息列：名字行（D 徽章 + 名字 + 状态 + 思考中）+ 筹码行（筹码 + 本轮下注）
+	var info := VBoxContainer.new()
+	info.add_theme_constant_override("separation", 2)
+	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	top.add_child(info)
+
+	var name_row := HBoxContainer.new()
+	name_row.add_theme_constant_override("separation", 4)
+	info.add_child(name_row)
+
+	# 庄家徽章：白色小圆筹码 + 黑色 D
+	_dealer_badge = PanelContainer.new()
+	_dealer_badge.custom_minimum_size = Vector2(18, 18)
+	var d_style := StyleBoxFlat.new()
+	d_style.bg_color = Color(0.93, 0.93, 0.90)
+	d_style.set_corner_radius_all(9)
+	_dealer_badge.add_theme_stylebox_override("panel", d_style)
+	_dealer_badge.visible = false
+	name_row.add_child(_dealer_badge)
+	var d_label := Label.new()
+	d_label.text = "D"
+	d_label.add_theme_font_size_override("font_size", 11)
+	d_label.add_theme_color_override("font_color", Color(0.10, 0.10, 0.12))
+	d_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	d_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_dealer_badge.add_child(d_label)
 
 	_name_label = Label.new()
 	_name_label.add_theme_font_size_override("font_size", 15)
 	_name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	top.add_child(_name_label)
+	_name_label.clip_text = true
+	name_row.add_child(_name_label)
 
 	_status_label = Label.new()
 	_status_label.add_theme_font_size_override("font_size", 13)
-	_status_label.add_theme_color_override("font_color", Color(1, 0.6, 0.3))
-	top.add_child(_status_label)
+	name_row.add_child(_status_label)
 
 	# A9 思考中省略号
 	_thinking_label = Label.new()
@@ -68,25 +108,40 @@ func _ready() -> void:
 	_thinking_label.add_theme_font_size_override("font_size", 15)
 	_thinking_label.add_theme_color_override("font_color", Color(0.8, 0.85, 1))
 	_thinking_label.visible = false
-	top.add_child(_thinking_label)
+	name_row.add_child(_thinking_label)
 
-	# 第二行：筹码 + 本轮下注
-	var mid := HBoxContainer.new()
-	mid.add_theme_constant_override("separation", 6)
-	root.add_child(mid)
+	var chips_row := HBoxContainer.new()
+	chips_row.add_theme_constant_override("separation", 6)
+	info.add_child(chips_row)
 
 	_chips_label = Label.new()
 	_chips_label.add_theme_font_size_override("font_size", 14)
-	_chips_label.add_theme_color_override("font_color", Color(0.9, 0.85, 0.5))
+	_chips_label.add_theme_color_override("font_color", Color(0.95, 0.82, 0.40))
 	_chips_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	mid.add_child(_chips_label)
+	chips_row.add_child(_chips_label)
 
 	_bet_label = Label.new()
 	_bet_label.add_theme_font_size_override("font_size", 13)
-	_bet_label.add_theme_color_override("font_color", Color(0.6, 0.85, 1))
-	mid.add_child(_bet_label)
+	_bet_label.add_theme_color_override("font_color", Color(0.55, 0.80, 1.0))
+	chips_row.add_child(_bet_label)
 
-	# 第三行：底牌
+	# RPG 技能槽（预留）：默认隐藏，set_skill_slots(n) 显示 n 个空槽位
+	_skill_row = HBoxContainer.new()
+	_skill_row.add_theme_constant_override("separation", 4)
+	_skill_row.visible = false
+	root.add_child(_skill_row)
+	for i in 4:
+		var slot := PanelContainer.new()
+		slot.custom_minimum_size = Vector2(20, 20)
+		var s := StyleBoxFlat.new()
+		s.bg_color = Color(0.07, 0.08, 0.10)
+		s.set_corner_radius_all(4)
+		s.set_border_width_all(1)
+		s.border_color = Color(0.28, 0.30, 0.33)
+		slot.add_theme_stylebox_override("panel", s)
+		_skill_row.add_child(slot)
+
+	# 底牌行
 	var card_row := HBoxContainer.new()
 	card_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	card_row.add_theme_constant_override("separation", 6)
@@ -108,14 +163,14 @@ func bind_player(p: PlayerState) -> void:
 	refresh_status(p)
 
 
-## 按 avatar_id 更新头像；贴图缺失时隐藏（保留原无头像占位，不报错）。
+## 按 avatar_id 更新头像；贴图缺失时连框隐藏（保留原无头像占位，不报错）。
 func set_avatar(avatar_id: String) -> void:
 	var path := "res://assets/avatars/%s.png" % avatar_id
 	if avatar_id != "" and ResourceLoader.exists(path):
 		_avatar.texture = load(path)
-		_avatar.visible = true
+		_avatar_frame.visible = true
 	else:
-		_avatar.visible = false
+		_avatar_frame.visible = false
 
 
 ## 按 PlayerState 刷新状态标签与整体置灰。
@@ -128,10 +183,13 @@ func set_status(status: int) -> void:
 	match status:
 		PlayerState.Status.FOLDED:
 			_status_label.text = "弃牌"
+			_status_label.add_theme_color_override("font_color", Color(0.62, 0.65, 0.68))
 		PlayerState.Status.ALL_IN:
 			_status_label.text = "全下！"
+			_status_label.add_theme_color_override("font_color", Color(1.0, 0.45, 0.30))
 		PlayerState.Status.OUT:
 			_status_label.text = "出局"
+			_status_label.add_theme_color_override("font_color", Color(0.55, 0.57, 0.60))
 		_:
 			_status_label.text = ""
 	modulate = Color(1, 1, 1, 0.35) if status == PlayerState.Status.OUT else Color.WHITE
@@ -147,21 +205,28 @@ func set_bet(amount: int) -> void:
 
 
 func set_dealer(on: bool) -> void:
-	_dealer_label.visible = on
+	_dealer_badge.visible = on
 
 
-## 当前行动者高亮（A6：光圈呼吸动画）。
+## RPG 预留：显示 count 个技能空槽（0 或负数隐藏整行），图标接入后替换槽位内容。
+func set_skill_slots(count: int) -> void:
+	_skill_row.visible = count > 0
+	for i in _skill_row.get_child_count():
+		_skill_row.get_child(i).visible = i < count
+
+
+## 当前行动者高亮（A6：金色描边呼吸动画）。
 func set_highlight(on: bool) -> void:
 	if _highlight_tween:
 		_highlight_tween.kill()
 		_highlight_tween = null
 	if on:
-		_bg.border_color = Color(1, 0.85, 0.2)
+		_bg.border_color = COLOR_HIGHLIGHT
 		_highlight_tween = create_tween().set_loops()
-		_highlight_tween.tween_property(_bg, "border_color", Color(1, 0.97, 0.55), 0.6)
-		_highlight_tween.tween_property(_bg, "border_color", Color(1, 0.85, 0.2), 0.6)
+		_highlight_tween.tween_property(_bg, "border_color", Color(1, 0.95, 0.60), 0.6)
+		_highlight_tween.tween_property(_bg, "border_color", COLOR_HIGHLIGHT, 0.6)
 	else:
-		_bg.border_color = Color(0.3, 0.32, 0.36)
+		_bg.border_color = COLOR_BORDER
 
 
 ## A9 思考中：省略号呼吸动效。

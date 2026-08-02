@@ -1,6 +1,7 @@
 class_name UITheme extends RefCounted
-## 共享 UI 主题（M8）：深色底 + 高对比文字，按钮/滑条/面板/输入控件风格统一，
-## 配色与桌布（深绿毛毡）协调。代码构建，UITheme.apply(root) 应用到场景根。
+## 共享 UI 主题（M8）：炭黑暗底 + 高对比文字，按钮/滑条/面板/输入控件风格统一，
+## 金色只作焦点强调（滑条拖块 / 倒计时 / 输入聚焦），暗底衬托角色头像与牌面。
+## 代码构建，UITheme.apply(root) 应用到场景根。
 
 static var _theme: Theme = null
 
@@ -36,11 +37,16 @@ static func _build() -> Theme:
 	t.set_color("font_disabled_color", "OptionButton", Color(1, 1, 1, 0.35))
 	t.set_font_size("font_size", "OptionButton", 15)
 
-	# 按钮（OptionButton 复用同一组观感）
-	var btn_normal := _box(Color(0.16, 0.20, 0.22), Color(0.42, 0.48, 0.46), 6)
-	var btn_hover := _box(Color(0.22, 0.28, 0.29), Color(0.60, 0.68, 0.62), 6)
-	var btn_pressed := _box(Color(0.10, 0.13, 0.14), Color(0.50, 0.56, 0.52), 6)
-	var btn_disabled := _box(Color(0.12, 0.14, 0.15, 0.7), Color(0.30, 0.32, 0.33, 0.6), 6)
+	# 按钮（OptionButton 复用同一组观感）：炭黑底 + 细描边，加大内边距
+	var btn_normal := _box(Color(0.14, 0.16, 0.19), Color(0.33, 0.36, 0.39), 8)
+	var btn_hover := _box(Color(0.19, 0.22, 0.25), Color(0.58, 0.61, 0.56), 8)
+	var btn_pressed := _box(Color(0.09, 0.11, 0.13), Color(0.48, 0.52, 0.48), 8)
+	var btn_disabled := _box(Color(0.11, 0.13, 0.15, 0.7), Color(0.28, 0.30, 0.31, 0.6), 8)
+	for box in [btn_normal, btn_hover, btn_pressed, btn_disabled]:
+		box.content_margin_left = 14
+		box.content_margin_right = 14
+		box.content_margin_top = 6
+		box.content_margin_bottom = 6
 	for type_name in ["Button", "OptionButton"]:
 		t.set_stylebox("normal", type_name, btn_normal)
 		t.set_stylebox("hover", type_name, btn_hover)
@@ -50,10 +56,10 @@ static func _build() -> Theme:
 
 	# 面板
 	t.set_stylebox("panel", "PanelContainer",
-			_box(Color(0.10, 0.12, 0.14, 0.95), Color(0.32, 0.36, 0.36), 10))
+			_box(Color(0.09, 0.10, 0.13, 0.95), Color(0.30, 0.33, 0.36), 10))
 
 	# 输入框（SpinBox 内部 LineEdit 继承）
-	var edit_normal := _box(Color(0.08, 0.10, 0.12), Color(0.38, 0.42, 0.42), 6)
+	var edit_normal := _box(Color(0.07, 0.08, 0.10), Color(0.36, 0.39, 0.39), 6)
 	var edit_focus := _box(Color(0.08, 0.10, 0.12), Color(0.85, 0.70, 0.25), 6)
 	t.set_stylebox("normal", "LineEdit", edit_normal)
 	t.set_stylebox("focus", "LineEdit", edit_focus)
@@ -79,7 +85,7 @@ static func _build() -> Theme:
 
 	# 弹窗（确认对话框）
 	t.set_stylebox("panel", "Window",
-			_box(Color(0.10, 0.12, 0.14), Color(0.42, 0.48, 0.46), 8))
+			_box(Color(0.09, 0.10, 0.13), Color(0.40, 0.44, 0.44), 8))
 	return t
 
 

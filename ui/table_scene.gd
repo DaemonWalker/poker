@@ -3,7 +3,7 @@ class_name TableScene extends Node2D
 ## 把 EventPlayer 分发的事件映射为座位/公共牌/底池/顶栏的占位 UI 更新。
 
 const AI_COUNT := 5
-const SEAT_OFFSET := Vector2(-75, -65)
+const SEAT_OFFSET := Vector2(-85, -65)
 const COMMUNITY_OFFSET := Vector2(-28, -40)
 ## 全局动画速度系数（标准 1.0 / 快速 0.5），所有 tween 时长乘此系数；
 ## _ready 时从设置读取（GameSettings.anim_speed）。
@@ -36,10 +36,15 @@ var _pending_legal: Dictionary = {}
 ## 请求在手牌边界返回主菜单（顶栏"主菜单"按钮置位，主循环检查后生效）。
 var _exit_to_menu := false
 
+## 顶栏胶囊徽章：级别 / 盲注 / 距升级（_build_top_bar 创建）。
+var _badge_level: Label
+var _badge_blinds: Label
+var _badge_hands: Label
+
 @onready var _seat_slots: Node2D = $SeatSlots
 @onready var _community_slots: Node2D = $CommunitySlots
 @onready var _deck_slot: Marker2D = $DeckSlot
-@onready var _top_bar: Label = $UILayer/TopBar
+@onready var _top_bar: HBoxContainer = $UILayer/TopBar
 @onready var _street_label: Label = $UILayer/StreetLabel
 @onready var _pot_label: Label = $UILayer/PotLabel
 @onready var _message_label: Label = $UILayer/MessageLabel
@@ -99,6 +104,8 @@ func _ready() -> void:
 	# 菜单按钮只对路由进入的正式对局有意义（--auto/独立运行隐藏）
 	_menu_button.visible = not auto and main != null
 
+	_build_top_bar()
+	_style_center_labels()
 	_refresh_top_bar()
 	_message_label.text = "继续锦标赛…" if resumed else "锦标赛开始！"
 	if auto:
@@ -428,10 +435,70 @@ func _seat_center(seat: SeatUI) -> Vector2:
 	return seat.position + Vector2(SeatUI.WIDTH / 2.0, 40)
 
 
+## 顶栏胶囊徽章：级别 / 盲注 / 距升级 三个药丸（替代原来的整行纯文本）。
+func _build_top_bar() -> void:
+	_top_bar.add_theme_constant_override("separation", 8)
+	_badge_level = _add_badge()
+	_badge_blinds = _add_badge()
+	_badge_hands = _add_badge()
+
+
+## 创建一个药丸形徽章（圆角暗底 + 细描边），返回内部 Label 供更新文本。
+func _add_badge() -> Label:
+	var capsule := PanelContainer.new()
+	var s := StyleBoxFlat.new()
+	s.bg_color = Color(0.09, 0.10, 0.13, 0.85)
+	s.set_corner_radius_all(12)
+	s.set_border_width_all(1)
+	s.border_color = Color(0.30, 0.33, 0.36)
+	s.content_margin_left = 10
+	s.content_margin_right = 10
+	s.content_margin_top = 3
+	s.content_margin_bottom = 3
+	capsule.add_theme_stylebox_override("panel", s)
+	var label := Label.new()
+	label.add_theme_font_size_override("font_size", 13)
+	capsule.add_child(label)
+	_top_bar.add_child(capsule)
+	return label
+
+
+## 桌心标签样式：街名小字压公共牌上方，底池金色大字，消息条药丸底，盲注横幅金底。
+func _style_center_labels() -> void:
+	_street_label.add_theme_font_size_override("font_size", 13)
+	_street_label.add_theme_color_override("font_color", Color(0.72, 0.75, 0.72))
+
+	_pot_label.add_theme_font_size_override("font_size", 20)
+	_pot_label.add_theme_color_override("font_color", Color(0.95, 0.80, 0.35))
+
+	var msg_style := StyleBoxFlat.new()
+	msg_style.bg_color = Color(0.08, 0.09, 0.11, 0.78)
+	msg_style.set_corner_radius_all(12)
+	msg_style.content_margin_left = 14
+	msg_style.content_margin_right = 14
+	msg_style.content_margin_top = 4
+	msg_style.content_margin_bottom = 4
+	_message_label.add_theme_stylebox_override("normal", msg_style)
+
+	var banner_style := StyleBoxFlat.new()
+	banner_style.bg_color = Color(0.32, 0.23, 0.06, 0.95)
+	banner_style.set_corner_radius_all(12)
+	banner_style.set_border_width_all(1)
+	banner_style.border_color = Color(0.85, 0.70, 0.25)
+	banner_style.content_margin_left = 16
+	banner_style.content_margin_right = 16
+	banner_style.content_margin_top = 6
+	banner_style.content_margin_bottom = 6
+	_blind_banner.add_theme_stylebox_override("normal", banner_style)
+	_blind_banner.add_theme_color_override("font_color", Color(1.0, 0.92, 0.65))
+
+
 func _refresh_top_bar() -> void:
 	var blinds: Array = tm.config.blinds_at(tm.blind_level)
 	var remain: int = tm.config.hands_per_level - tm.hands_played
-	_top_bar.text = "盲注级别 %d（%d/%d） · 距升级 %d 手" % [tm.blind_level + 1, blinds[0], blinds[1], remain]
+	_badge_level.text = "级别 %d" % (tm.blind_level + 1)
+	_badge_blinds.text = "盲注 %d/%d" % [blinds[0], blinds[1]]
+	_badge_hands.text = "距升级 %d 手" % remain
 
 
 func _refresh_pot() -> void:

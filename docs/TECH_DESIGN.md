@@ -220,7 +220,9 @@ func pot_size() -> int               # 全部 hand_total_bet 之和
 
 持有 `tm` 与 `event_player`。`_ready`：读 `--auto`（置 `anim_enabled=false`）与动画速度（`ANIM_SPEED = GameSettings.anim_speed()`，标准 1.0/快速 0.5，全部 tween 时长乘此系数）；按路由意图 `tm.load_save()` 恢复或 `tm.start_new(...)` 新开（config 为空用 `GameSettings.make_config()`）；**--auto/独立运行时**兜底"有存档继续、否则默认 5 AI 新局"（常量 `AI_COUNT = 5`）。
 
-场景结构（table.tscn）：`TableFelt`（桌布贴图）+ `SeatSlots/SeatSlot0..8`（9 个手摆 Marker2D，按参赛人数启用前 N 个实例化 SeatUI）+ `CommunitySlots/Slot0..4` + `DeckSlot`（发牌动画起点）+ `UILayer`（CanvasLayer：TopBar、MenuButton、StreetLabel、PotLabel、MessageLabel、BlindBanner、ActionPanel）。桌面中央下注区为常量 `POT_POS(640, 300)`。
+场景结构（table.tscn）：`TableFelt`（桌布贴图）+ `SeatSlots/SeatSlot0..8`（9 个手摆 Marker2D，按参赛人数启用前 N 个实例化 SeatUI；0 号人类座位上移避开行动面板）+ `CommunitySlots/Slot0..4` + `DeckSlot`（发牌动画起点）+ `UILayer`（CanvasLayer：TopBar、MenuButton、StreetLabel、PotLabel、MessageLabel、BlindBanner、ActionPanel）。桌面中央下注区为常量 `POT_POS(640, 300)`。
+
+**桌心信息布局**（`_style_center_labels`）：街名小字压公共牌正上方，底池金色 20 号字居中，消息条与盲注横幅为药丸底色块；**顶栏 TopBar 是 HBoxContainer，`_build_top_bar` 生成"级别 / 盲注 / 距升级"三枚胶囊徽章**，`_refresh_top_bar` 只更新文本。
 
 **主循环** `_run_tournament()`：`while not tm.finished and not _exit_to_menu: tm.run_next_hand() → event_player.play_events(...) → await queue_drained`。**顶栏"主菜单"按钮只置 `_exit_to_menu` 标志位，在手牌边界生效切场景**（进度已自动保存；中途释放场景会打断本循环的 await）。--auto 下隐藏菜单按钮。
 
@@ -236,17 +238,17 @@ func pot_size() -> int               # 全部 hand_total_bet 之和
 
 ### 5.4 ActionPanel（ui/action_panel.gd）
 
-信号 `action_submitted(action)` / `timed_out()`。`show_for(legal_actions, pot, deadline_ms, bb)`：按 legal 显隐按钮（过牌/跟注同钮按上下文换文字；`can_raise=false` 时加注按钮与滑条一起隐藏）；滑条 `setup(min_raise_to, max_raise_to, bb 作步进, pot)`；**`deadline_ms=0`（倒计时关闭）时隐藏进度条且 `_process` 不计时**。全下二次确认：首次点击"上膛"变为"确认全下？"。提交与上膛均播 S10。
+信号 `action_submitted(action)` / `timed_out()`。`show_for(legal_actions, pot, deadline_ms, bb)`：按 legal 显隐按钮（过牌/跟注同钮按上下文换文字；`can_raise=false` 时加注按钮与滑条一起隐藏）；滑条 `setup(min_raise_to, max_raise_to, bb 作步进, pot)`；**`deadline_ms=0`（倒计时关闭）时隐藏进度条且 `_process` 不计时**。全下二次确认：首次点击"上膛"变为"确认全下？"。提交与上膛均播 S10。**按钮色阶分级（`_style_btn`，hover/pressed 由基准色推导）：弃牌暗红、过牌·跟注绿、加注金、全下正红**。
 
 ### 5.5 SeatUI / CardUI / RaiseSlider
 
-- **SeatUI**（150px 宽 PanelContainer）：头像（`set_avatar` 按 `avatar_id` 加载，缺失隐藏不报错）、庄家 D 标记、名字、状态标签（弃牌/全下！/出局 + OUT 整体置灰 0.35）、筹码/本轮下注标签、两张 CardUI；A6 高亮边框呼吸循环 tween（切换时 kill 重建，节奏随行动重置属预期）；A9 省略号呼吸；`flip_reveal` 摊牌逐张翻面；`fade_out` 淘汰淡出。
+- **SeatUI**（170px 宽 PanelContainer，角色卡布局）：56px 头像框（圆角描边 PanelContainer 包 TextureRect，`set_avatar` 按 `avatar_id` 加载，缺失连框隐藏不报错；**描边色预留作 RPG 职业/稀有度接口**）、信息列（庄家白色圆形 D 徽章、名字、状态标签（弃牌灰/全下！橙红/出局暗灰 + OUT 整体置灰 0.35）、筹码金色/本轮下注蓝色）、隐藏技能槽行（**RPG 预留，`set_skill_slots(n)` 显示 n 个空槽**）、两张 CardUI；A6 高亮金色边框呼吸循环 tween（切换时 kill 重建，节奏随行动重置属预期）；A9 省略号呼吸；`flip_reveal` 摊牌逐张翻面；`fade_out` 淘汰淡出。
 - **CardUI**（56×80）：贴图优先、缺失降级色块+文字（红桃/方块红字）。`flip_to_card(card, dur)` 横向压扁→换面→展开（dur 为半程）。贴图带静态缓存 `_tex_cache`。
 - **RaiseSlider**：滑条 + 金额标签 + 快捷按钮 ½池/¾池/1池（对齐步进、钳制范围）。
 
 ### 5.6 UITheme（ui/ui_theme.gd）
 
-代码构建共享 `Theme`（深色底 + 金色点缀），`UITheme.apply(root)` 应用到场景根（子控件继承），单例式构建一次。不使用 .tres 主题资源。
+代码构建共享 `Theme`（炭黑暗底 + 高对比文字，金色只作焦点强调：滑条拖块/倒计时/输入聚焦），`UITheme.apply(root)` 应用到场景根（子控件继承），单例式构建一次。不使用 .tres 主题资源。
 
 ### 5.7 AudioManager（ui/audio_manager.gd，autoload 单例）
 

@@ -52,15 +52,19 @@ func _ready() -> void:
 
 	_fold_btn = _make_btn(row, "弃牌")
 	_fold_btn.pressed.connect(_submit.bind({"type": BettingRound.ActionType.FOLD, "amount": 0}))
+	_style_btn(_fold_btn, Color(0.26, 0.15, 0.16), Color(0.55, 0.30, 0.30), Color(0.95, 0.85, 0.85))
 
 	_check_call_btn = _make_btn(row, "过牌")
 	_check_call_btn.pressed.connect(_on_check_call)
+	_style_btn(_check_call_btn, Color(0.15, 0.32, 0.20), Color(0.32, 0.60, 0.38), Color(0.88, 1.0, 0.90))
 
 	_raise_btn = _make_btn(row, "加注")
 	_raise_btn.pressed.connect(_on_raise)
+	_style_btn(_raise_btn, Color(0.55, 0.42, 0.12), Color(0.90, 0.72, 0.28), Color(0.10, 0.08, 0.02))
 
 	_all_in_btn = _make_btn(row, "全下")
 	_all_in_btn.pressed.connect(_on_all_in)
+	_style_btn(_all_in_btn, Color(0.48, 0.13, 0.13), Color(0.85, 0.32, 0.30), Color(1.0, 0.92, 0.90))
 
 	_slider.value_changed.connect(_on_slider_value_changed)
 
@@ -70,9 +74,32 @@ func _ready() -> void:
 func _make_btn(parent: Control, text: String) -> Button:
 	var btn := Button.new()
 	btn.text = text
-	btn.custom_minimum_size = Vector2(110, 40)
+	btn.custom_minimum_size = Vector2(120, 42)
+	btn.add_theme_font_size_override("font_size", 16)
 	parent.add_child(btn)
 	return btn
+
+
+## 动作按钮色阶分级：弃牌暗红 / 过牌·跟注绿 / 加注金 / 全下正红。
+## hover/pressed 由基准色推导，保持三色观感统一。
+func _style_btn(btn: Button, base: Color, border: Color, font_color: Color) -> void:
+	btn.add_theme_stylebox_override("normal", _btn_box(base, border))
+	btn.add_theme_stylebox_override("hover", _btn_box(base.lightened(0.12), border.lightened(0.15)))
+	btn.add_theme_stylebox_override("pressed", _btn_box(base.darkened(0.15), border.darkened(0.10)))
+	btn.add_theme_stylebox_override("disabled", _btn_box(base.darkened(0.4), border.darkened(0.4)))
+	btn.add_theme_color_override("font_color", font_color)
+	btn.add_theme_color_override("font_hover_color", font_color.lightened(0.2))
+	btn.add_theme_color_override("font_pressed_color", font_color)
+	btn.add_theme_color_override("font_disabled_color", Color(1, 1, 1, 0.35))
+
+
+func _btn_box(bg: Color, border: Color) -> StyleBoxFlat:
+	var s := StyleBoxFlat.new()
+	s.bg_color = bg
+	s.set_corner_radius_all(8)
+	s.set_border_width_all(1)
+	s.border_color = border
+	return s
 
 
 ## 由 legal_actions 驱动面板；pot/bb 供滑条与快捷按钮使用。
