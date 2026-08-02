@@ -361,7 +361,7 @@ godot --headless --path . -- --auto
 14. **名次表由 TableScene 算好传入结算场景**（冠军 = eliminated 外存活者，其余按淘汰倒序）：table 侧有 tm 上下文；A10 彩带随之落在结算界面。
 15. **UI 主题代码构建（UITheme.apply）、座位槽位编辑器手摆 Marker2D**：跟随组件代码构建惯例，免维护二进制主题资源与运行时椭圆计算。
 16. **--auto 模式动画跳过、音效保留**：无头冒烟需快速跑完，音效无害且能顺带验证加载。
-17. **素材与降级策略**：扑克牌用 playing-cards-assets（MIT，原 Kenney 像素牌 42×60 放大模糊已弃用）、音效用 Kenney CC0 包；头像/空槽位框程序化自生成（找不到 8 个差异化 CC0 头像包，自生成无版权问题），筹码/背景/奖杯为 Blender 无头渲染（脚本 `tools/blender/`，色调对齐原程序化版深绿配色）；飞行筹码按金额区间着色不印面值（28px 不可读，金额由座位标签显示）；贴图/音效缺失一律降级不报错（色块占位、push_warning），表现层不允许因素材问题崩溃。
+17. **素材与降级策略**：扑克牌用 playing-cards-assets（MIT，原 Kenney 像素牌 42×60 放大模糊已弃用）、音效用 Kenney CC0 包；空槽位框等少数贴图程序化自生成，头像/筹码/背景/奖杯/UI 贴图（庄家按钮、彩带、Logo、牌背）均为 Blender 无头渲染（脚本 `tools/blender/`，色调/图形自原程序化版提取或对齐）；飞行筹码按金额区间着色不印面值（28px 不可读，金额由座位标签显示）；贴图/音效缺失一律降级不报错（色块占位、push_warning），表现层不允许因素材问题崩溃。
 18. **事件携带状态快照（alive_seats / status），UI 不读实时 PlayerState 状态**：整手牌同步跑完后事件才逐条回放，被淘汰者的实时 status 已是 OUT；若 UI 读实时状态，全下（或将淘汰）的玩家会从手牌开始就被显示成"出局"。
 19. **简单模式用"假定摊牌必胜"重洗实现，而非改 AI 或改赔率**：只动牌堆顺序，规则/结算/事件零侵入；派生种子（`base_seed + attempt`）保证同种子可复现，存档语义不受影响；难度随 TournamentConfig 快照，进行中锦标赛不被半路改。
 
@@ -378,18 +378,18 @@ res://assets/cards/card_<花色>_<点数>.png
 特殊：card_back.png（牌背）、card_empty.png（空槽位框）
 ```
 
-源素材为 hayeah/playing-cards-assets（MIT，图案源自 Byron Knoll 公有领域矢量牌）222×323 高分辨率 PNG；原图只有图案层无牌身，已垫白底圆角牌身（圆角半径 12），牌背取 `back@2x.png`（314×476）改色为蓝底白纹 + 白边圆角，空槽位框程序化生成；显示尺寸 `CardUI.SIZE = 56×80`。许可证 `assets/cards/LICENSE-playing-cards-assets.txt`。
+源素材为 hayeah/playing-cards-assets（MIT，图案源自 Byron Knoll 公有领域矢量牌）222×323 高分辨率 PNG；原图只有图案层无牌身，已垫白底圆角牌身（圆角半径 12）；牌背 314×476 为本项目 Blender 渲染版（白边 + 蓝底白菱格 + 圆角透明，色调采样自原改色版，脚本 `tools/blender/build_cardback_logo.py`）；空槽位框程序化生成；显示尺寸 `CardUI.SIZE = 56×80`。许可证 `assets/cards/LICENSE-playing-cards-assets.txt`。
 
 ### 9.2 头像（core/ai/ai_profiles.gd → ui/seat_ui.gd）
 
-`avatar_id` → `res://assets/avatars/<avatar_id>.png`（64×64，程序化生成）。对应关系：`avatar_human`=你；`avatar_rock`=石头、`avatar_maniac`=疯子、`avatar_veteran`=老枪、`avatar_anchor`=秤砣、`avatar_fox`=狐狸、`avatar_shark`=鲨鱼、`avatar_block`=木头、`avatar_drifter`=浪人。
+`avatar_id` → `res://assets/avatars/<avatar_id>.png`（128×128 卡通人物头像，DiceBear adventurer 风格，CC-BY 4.0，背景色沿用原身份配色）。对应关系：`avatar_human`=你；`avatar_rock`=石头、`avatar_maniac`=疯子、`avatar_veteran`=老枪、`avatar_anchor`=秤砣、`avatar_fox`=狐狸、`avatar_shark`=鲨鱼、`avatar_block`=木头、`avatar_drifter`=浪人。
 
 ### 9.3 筹码（ui/table_scene.gd `_chip_texture`）
 
-`res://assets/chips/chip_<档>.png`（256×256 顶视，Blender 渲染；另有 `_tilt` 45° 斜视版备用），飞行筹码按金额区间选档：**chip_white <100、chip_red <500、chip_blue <1000、chip_black ≥1000**；文件缺失降级为金色圆块。座位前的下注额始终是文字标签，不堆筹码。
+`res://assets/chips/chip_<档>.png`（256×256 顶视，Blender 渲染；`_tilt` 45° 斜视版用于下注/收池飞行动画，缺失回落顶视版），飞行筹码按金额区间选档：**chip_white <100、chip_red <500、chip_blue <1000、chip_black ≥1000**；文件缺失降级为金色圆块。座位前的下注额始终是文字标签，不堆筹码。
 
 ### 9.4 背景与音效
 
-- `assets/bg/table_felt.png`（1280×720 桌布，table.tscn）、`assets/bg/menu_bg.png`（主菜单/设置/结算/战绩共用），均为 Blender 无头渲染（脚本 `tools/blender/`，色调对齐原程序化版深绿配色）；`assets/trophy/trophy.png`（512×512 带 alpha 金奖杯，result_ui 夺冠标题）同为 Blender 渲染。
+- `assets/bg/table_felt.png`（1280×720 桌布，table.tscn）、`assets/bg/menu_bg.png`（主菜单/设置/结算/战绩共用），均为 Blender 无头渲染（脚本 `tools/blender/`，色调对齐原程序化版深绿配色）；`assets/trophy/trophy.png`（512×512 带 alpha 金奖杯，result_ui 夺冠标题）与 `assets/trophy/spin/`（16 帧 360° 旋转序列，夺冠时 12fps 循环播放）同为 Blender 渲染；`assets/ui/`（dealer_puck 庄家徽章、confetti_01~04 彩带贴图、logo 主菜单金字标题）亦为 Blender 渲染，各处缺失均有降级路径。
 - 音效名 → 文件映射见 `AudioManager.SFX`（10 项，GDD 第 7 章）；原始出处（Kenney Casino Audio 1.1 / Interface Sounds，CC0，经 OpenGameArt 镜像）与逐文件对照见 `assets/audio/SOURCES.md`，许可证 `assets/audio/Kenney-License.txt`。
 - 全部素材的来源与生成方式记录在 `assets/SOURCES.md` 与 `assets/audio/SOURCES.md`，替换素材时同步更新这两份清单。

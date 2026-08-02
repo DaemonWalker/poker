@@ -191,7 +191,7 @@
 | A7 | 淘汰 | 出局玩家座位灰化淡出 |
 | A8 | 盲注升级 | 顶部横幅滑入、停留、滑出 |
 | A9 | 思考中 | AI 行动前 0.5~1.5s 延迟 + 省略号呼吸动效 |
-| A10 | 夺冠 | 结算画面奖杯贴图标题 + 顶部彩带粒子 |
+| A10 | 夺冠 | 结算画面奖杯旋转动画（16 帧循环，缺帧序列时用静态图）+ 顶部彩带粒子（Blender 彩带贴图） |
 
 ---
 
@@ -235,9 +235,9 @@
 
 实际使用的素材（详细来源与许可证见 `assets/SOURCES.md` 与 `assets/audio/SOURCES.md`）：
 
-- **扑克牌**：hayeah/playing-cards-assets（MIT，图案源自 Byron Knoll 公有领域矢量牌），52 张正面 222×323 + 牌背 314×476（蓝底白纹）+ 程序化生成的空槽位框；牌面已垫白底圆角牌身，显示 56×80。许可证原文 `assets/cards/LICENSE-playing-cards-assets.txt`。
-- **头像**：9 张程序化自生成 PNG（64×64 圆形徽章 + 几何符号）：8 个 AI 身份 + 1 个人类默认头像。
-- **筹码**：4 色 Blender 渲染 PNG（256×256 顶视 + 45° 斜视备用，脚本 `tools/blender/build_chips.py`），飞行筹码按金额区间着色——白 <100、红 <500、蓝 <1000、黑 ≥1000（不印面值，金额由座位下注标签显示）。
+- **扑克牌**：hayeah/playing-cards-assets（MIT，图案源自 Byron Knoll 公有领域矢量牌），52 张正面 222×323 + 牌背 314×476（Blender 渲染蓝底白菱格）+ 程序化生成的空槽位框；牌面已垫白底圆角牌身，显示 56×80。许可证原文 `assets/cards/LICENSE-playing-cards-assets.txt`。
+- **头像**：9 张 DiceBear 卡通人物头像（128×128，adventurer 风格，CC-BY 4.0 署名 Lisa Wischofsky，按身份性格选配，背景沿用身份配色）。
+- **筹码**：4 色 Blender 渲染 PNG（256×256 顶视 + 45° 斜视版用于下注飞行动画，脚本 `tools/blender/build_chips.py`），飞行筹码按金额区间着色——白 <100、红 <500、蓝 <1000、黑 ≥1000（不印面值，金额由座位下注标签显示）。
 - **背景**：牌桌桌布与菜单背景 2 张 Blender 渲染 PNG（1280×720，深绿毛毡 + 木桌沿，脚本 `tools/blender/build_backgrounds.py`）。
 - **奖杯**：Blender 渲染 512×512 带 alpha 金奖杯（`assets/trophy/trophy.png`），用于结算界面夺冠标题。
 - **音效**：Kenney Casino Audio 1.1 + Kenney Interface Sounds（均 CC0，经 OpenGameArt 镜像下载）。许可证原文 `assets/audio/Kenney-License.txt`。
