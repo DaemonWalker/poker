@@ -1,13 +1,15 @@
 # 图片素材来源清单（assets/）
 
-## 扑克牌（assets/cards/，CC0）
+## 扑克牌（assets/cards/，MIT）
 
-Kenney Playing Cards Pack（www.kenney.nl），**CC0 协议**（无署名要求），许可证原文见 `Kenney-License.txt`。
+hayeah/playing-cards-assets（GitHub），**MIT 协议**，许可证原文见 `LICENSE-playing-cards-assets.txt`。牌面图案源自 Byron Knoll 公有领域（public domain）矢量扑克牌。
 
-- 取包内 `PNG/Cards (large)`（64x64，牌面竖版居中于透明底）的 52 张正面 + `card_back.png` 牌背 + `card_empty.png` 空槽位框
-- 已用 Godot 脚本按不透明区域裁剪为 42x60（宽高比 0.7，与 `CardUI.SIZE` 一致），文件名保持原命名：`card_<spades|hearts|clubs|diamonds>_<02..10|J|Q|K|A>.png`
-- 下载来源（2026-08-01）：https://kenney.nl/assets/playing-cards-pack （直链 zip）
-- 注意：该包为像素风竖版牌；牌面图案与许可证经抽验确认无误
+- 52 张正面为 222x323 高分辨率 PNG（替换 2026-08-02 前使用的 Kenney 像素风 42x60 版，原版本在 56x80 显示尺寸下放大约 1.33 倍导致模糊）
+- 原 PNG 只有图案层（无白色牌身），已用 Godot 脚本垫白底圆角牌身（圆角半径 12，约为牌宽 5%）
+- 牌背 `card_back.png` 取包内 `back@2x.png`（314x476），原图为白底浅灰纹，已改色为经典蓝底白纹 + 白色牌边 + 圆角
+- 空槽位框 `card_empty.png` 为本项目程序化生成（222x323 圆角镂空框，Godot 脚本绘制）
+- 文件名按项目规范重命名：`card_<spades|hearts|clubs|diamonds>_<02..10|J|Q|K|A>.png`（原名 `<rank>_of_<suit>.png`）
+- 下载来源（2026-08-02）：https://github.com/hayeah/playing-cards-assets （master zip）
 
 ## 头像 / 筹码 / 背景（程序化自生成，无版权问题）
 

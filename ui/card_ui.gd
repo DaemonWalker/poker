@@ -1,5 +1,5 @@
 class_name CardUI extends PanelContainer
-## 单张牌显示组件：Kenney 扑克牌贴图（CC0，assets/cards/）。
+## 单张牌显示组件：playing-cards-assets 扑克牌贴图（MIT，assets/cards/，来源见 assets/SOURCES.md）。
 ## 贴图缺失时降级为占位色块 + 文字；翻面动画（pivot 缩放）与贴图无关。
 
 const SIZE := Vector2(56, 80)

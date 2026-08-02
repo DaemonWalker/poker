@@ -53,8 +53,8 @@ docs/       文档（见下）
 | `docs/GDD.md` | 游戏规则：玩法、锦标赛规则、AI 设计、界面操作、动画音效清单、存档战绩 |
 | `docs/TECH_DESIGN.md` | 技术文档：架构、模块职责、事件清单、持久化格式、测试命令、关键实现决策、素材映射 |
 | `AGENTS.md` | 给 AI 助手的快速上手指南：命令、约定、陷阱 |
-| `assets/SOURCES.md` / `assets/audio/SOURCES.md` | 素材来源与许可证（CC0） |
+| `assets/SOURCES.md` / `assets/audio/SOURCES.md` | 素材来源与许可证 |
 
 ## 素材与许可证
 
-扑克牌贴图来自 Kenney Playing Cards Pack（CC0）；音效来自 Kenney Casino Audio / Interface Sounds（CC0，经 OpenGameArt 镜像）；头像、筹码、桌布、背景为程序化生成（无版权问题）。明细见 `assets/SOURCES.md`。
+扑克牌贴图来自 hayeah/playing-cards-assets（MIT，图案源自 Byron Knoll 公有领域矢量牌）；音效来自 Kenney Casino Audio / Interface Sounds（CC0，经 OpenGameArt 镜像）；头像、筹码、桌布、背景、空槽位框为程序化生成（无版权问题）。明细见 `assets/SOURCES.md`。

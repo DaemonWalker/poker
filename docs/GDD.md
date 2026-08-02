@@ -234,7 +234,7 @@
 
 实际使用的素材（详细来源与许可证见 `assets/SOURCES.md` 与 `assets/audio/SOURCES.md`）：
 
-- **扑克牌**：Kenney Playing Cards Pack（CC0），52 张正面 + 牌背 + 空槽位框，已裁剪为 42×60（显示 56×80）。许可证原文 `assets/cards/Kenney-License.txt`。
+- **扑克牌**：hayeah/playing-cards-assets（MIT，图案源自 Byron Knoll 公有领域矢量牌），52 张正面 222×323 + 牌背 314×476（蓝底白纹）+ 程序化生成的空槽位框；牌面已垫白底圆角牌身，显示 56×80。许可证原文 `assets/cards/LICENSE-playing-cards-assets.txt`。
 - **头像**：9 张程序化自生成 PNG（64×64 圆形徽章 + 几何符号）：8 个 AI 身份 + 1 个人类默认头像。
 - **筹码**：4 张程序化自生成 PNG，飞行筹码按金额区间着色——白 <100、红 <500、蓝 <1000、黑 ≥1000（不印面值，金额由座位下注标签显示）。
 - **背景**：牌桌桌布与菜单背景 2 张程序化自生成 PNG（1280×720，深绿毛毡风）。
