@@ -25,11 +25,20 @@ func _ready() -> void:
 	vbox.add_theme_constant_override("separation", 12)
 	center.add_child(vbox)
 
-	var title := Label.new()
-	title.text = "德州扑克锦标赛"
-	title.add_theme_font_size_override("font_size", 40)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vbox.add_child(title)
+	# 标题：Blender 渲染 3D 金字 Logo（assets/ui/logo.png），缺失时降级为文字
+	if ResourceLoader.exists("res://assets/ui/logo.png"):
+		var logo := TextureRect.new()
+		logo.texture = load("res://assets/ui/logo.png")
+		logo.custom_minimum_size = Vector2(520, 72)
+		logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		vbox.add_child(logo)
+	else:
+		var title := Label.new()
+		title.text = "德州扑克锦标赛"
+		title.add_theme_font_size_override("font_size", 40)
+		title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		vbox.add_child(title)
 
 	_continue_btn = _make_btn(vbox, "继续锦标赛")
 	_continue_btn.disabled = not SaveManager.new().has_save()

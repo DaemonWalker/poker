@@ -15,7 +15,7 @@ var _name_label: Label
 var _chips_label: Label
 var _bet_label: Label
 var _status_label: Label
-var _dealer_badge: PanelContainer
+var _dealer_badge: Control
 var _thinking_label: Label
 var _skill_row: HBoxContainer
 var _cards: Array[CardUI] = []
@@ -75,22 +75,32 @@ func _ready() -> void:
 	name_row.add_theme_constant_override("separation", 4)
 	info.add_child(name_row)
 
-	# 庄家徽章：白色小圆筹码 + 黑色 D
-	_dealer_badge = PanelContainer.new()
-	_dealer_badge.custom_minimum_size = Vector2(18, 18)
-	var d_style := StyleBoxFlat.new()
-	d_style.bg_color = Color(0.93, 0.93, 0.90)
-	d_style.set_corner_radius_all(9)
-	_dealer_badge.add_theme_stylebox_override("panel", d_style)
-	_dealer_badge.visible = false
-	name_row.add_child(_dealer_badge)
-	var d_label := Label.new()
-	d_label.text = "D"
-	d_label.add_theme_font_size_override("font_size", 11)
-	d_label.add_theme_color_override("font_color", Color(0.10, 0.10, 0.12))
-	d_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	d_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_dealer_badge.add_child(d_label)
+	# 庄家徽章：Blender 渲染 dealer puck（assets/ui/dealer_puck.png），缺失时降级为白圆底 + 黑色 D 文字
+	if ResourceLoader.exists("res://assets/ui/dealer_puck.png"):
+		var puck := TextureRect.new()
+		puck.texture = load("res://assets/ui/dealer_puck.png")
+		puck.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		puck.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		puck.custom_minimum_size = Vector2(18, 18)
+		puck.visible = false
+		name_row.add_child(puck)
+		_dealer_badge = puck
+	else:
+		_dealer_badge = PanelContainer.new()
+		_dealer_badge.custom_minimum_size = Vector2(18, 18)
+		var d_style := StyleBoxFlat.new()
+		d_style.bg_color = Color(0.93, 0.93, 0.90)
+		d_style.set_corner_radius_all(9)
+		_dealer_badge.add_theme_stylebox_override("panel", d_style)
+		_dealer_badge.visible = false
+		name_row.add_child(_dealer_badge)
+		var d_label := Label.new()
+		d_label.text = "D"
+		d_label.add_theme_font_size_override("font_size", 11)
+		d_label.add_theme_color_override("font_color", Color(0.10, 0.10, 0.12))
+		d_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		d_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		_dealer_badge.add_child(d_label)
 
 	_name_label = Label.new()
 	_name_label.add_theme_font_size_override("font_size", 15)

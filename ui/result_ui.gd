@@ -2,8 +2,13 @@ class_name ResultUI extends Control
 ## 结算界面：名次表（冠军置顶高亮）+ 夺冠奖杯/彩带粒子（A10 自 TableScene 迁移）
 ## + 再来一局（同配置）/ 返回主菜单。StatsManager 由逻辑层自动记录，本界面零写入。
 
+const SPIN_FPS := 12.0
+
 var _ai_count := 5
 var _config: TournamentManager.TournamentConfig = null
+var _trophy_rect: TextureRect = null
+var _spin_frames: Array[Texture2D] = []
+var _spin_time := 0.0
 
 
 ## 由 Main.change_scene 传入：{win, rank, total, standings[{rank,name,is_human}], ai_count, config}
@@ -41,10 +46,16 @@ func _build(params: Dictionary) -> void:
 	vbox.add_theme_constant_override("separation", 12)
 	center.add_child(vbox)
 
-	# 冠军奖杯视觉：Blender 渲染贴图（assets/trophy/trophy.png），贴图缺失时降级为 🏆 文本
+	# 冠军奖杯视觉：Blender 渲染；有旋转帧序列（assets/trophy/spin/）则逐帧播放，
+	# 否则用静态图（assets/trophy/trophy.png），均缺失时降级为 🏆 文本
 	var trophy_tex: Texture2D = null
-	if win and ResourceLoader.exists("res://assets/trophy/trophy.png"):
-		trophy_tex = load("res://assets/trophy/trophy.png")
+	if win:
+		if ResourceLoader.exists("res://assets/trophy/spin/trophy_spin_00.png"):
+			for i in range(16):
+				_spin_frames.append(load("res://assets/trophy/spin/trophy_spin_%02d.png" % i))
+			trophy_tex = _spin_frames[0]
+		elif ResourceLoader.exists("res://assets/trophy/trophy.png"):
+			trophy_tex = load("res://assets/trophy/trophy.png")
 	if trophy_tex != null:
 		var trophy := TextureRect.new()
 		trophy.texture = trophy_tex
@@ -52,6 +63,8 @@ func _build(params: Dictionary) -> void:
 		trophy.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		trophy.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		vbox.add_child(trophy)
+		_trophy_rect = trophy
+		set_process(true)
 	var title := Label.new()
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	if win:
@@ -107,6 +120,7 @@ func _build(params: Dictionary) -> void:
 
 
 ## A10：彩带粒子（参数自 TableScene._spawn_confetti 原样迁移）。
+## 有彩带贴图（assets/ui/confetti_*.png，Blender 渲染）时替换默认方块并加随机旋转。
 func _spawn_confetti() -> void:
 	var p := CPUParticles2D.new()
 	p.position = Vector2(640, -10)
@@ -119,11 +133,28 @@ func _spawn_confetti() -> void:
 	p.initial_velocity_min = 150.0
 	p.initial_velocity_max = 300.0
 	p.gravity = Vector2(0, 500)
-	p.scale_amount_min = 3.0
-	p.scale_amount_max = 5.0
+	if ResourceLoader.exists("res://assets/ui/confetti_01.png"):
+		p.texture = load("res://assets/ui/confetti_0%d.png" % (randi() % 4 + 1))
+		p.scale_amount_min = 0.15
+		p.scale_amount_max = 0.3
+		p.angle_min = -180.0
+		p.angle_max = 180.0
+	else:
+		p.scale_amount_min = 3.0
+		p.scale_amount_max = 5.0
 	p.color = Color(1, 0.85, 0.2)
 	add_child(p)
 	p.emitting = true
+
+
+## 奖杯旋转帧序列循环播放。
+func _process(delta: float) -> void:
+	if _spin_frames.is_empty() or _trophy_rect == null:
+		set_process(false)
+		return
+	_spin_time += delta
+	var idx := int(_spin_time * SPIN_FPS) % _spin_frames.size()
+	_trophy_rect.texture = _spin_frames[idx]
 
 
 func _on_again() -> void:

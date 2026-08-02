@@ -376,7 +376,7 @@ func _spawn_fly_card(pos: Vector2) -> CardUI:
 
 ## A3：筹码从座位移到中央下注区。
 func _anim_chip_to_pot(seat: SeatUI, amount: int) -> void:
-	var chip := _spawn_chip(_seat_center(seat), amount)
+	var chip := _spawn_chip(_seat_center(seat), amount, true)
 	var t := create_tween()
 	t.tween_property(chip, "position", POT_POS, 0.3 * ANIM_SPEED)
 	await t.finished
@@ -385,7 +385,7 @@ func _anim_chip_to_pot(seat: SeatUI, amount: int) -> void:
 
 ## A4：筹码从中央下注区移到赢家座位。
 func _anim_chip_to_seat(seat: SeatUI, amount: int) -> void:
-	var chip := _spawn_chip(POT_POS, amount)
+	var chip := _spawn_chip(POT_POS, amount, true)
 	var t := create_tween()
 	t.tween_property(chip, "position", _seat_center(seat), 0.35 * ANIM_SPEED)
 	await t.finished
@@ -393,9 +393,10 @@ func _anim_chip_to_seat(seat: SeatUI, amount: int) -> void:
 
 
 ## 筹码贴图（assets/chips/，按金额区间着色：白<100 红<500 蓝<1000 黑≥1000）；
+## tilt 为 true 时优先用 45° 斜视版（飞行动画用，缺失回落顶视版）；
 ## 贴图缺失时降级为金色小圆块。
-func _spawn_chip(pos: Vector2, amount: int = 0) -> Control:
-	var tex := _chip_texture(amount)
+func _spawn_chip(pos: Vector2, amount: int = 0, tilt: bool = false) -> Control:
+	var tex := _chip_texture(amount, tilt)
 	if tex != null:
 		var chip := TextureRect.new()
 		chip.texture = tex
@@ -416,8 +417,8 @@ func _spawn_chip(pos: Vector2, amount: int = 0) -> Control:
 	return fallback
 
 
-## 按金额区间选筹码贴图；文件缺失返回 null（调用方走降级圆块）。
-static func _chip_texture(amount: int) -> Texture2D:
+## 按金额区间选筹码贴图；tilt 为 true 时优先 _tilt 斜视版；文件缺失返回 null（调用方走降级圆块）。
+static func _chip_texture(amount: int, tilt: bool = false) -> Texture2D:
 	var chip_name := "chip_white"
 	if amount >= 1000:
 		chip_name = "chip_black"
@@ -425,6 +426,10 @@ static func _chip_texture(amount: int) -> Texture2D:
 		chip_name = "chip_blue"
 	elif amount >= 100:
 		chip_name = "chip_red"
+	if tilt:
+		var tilt_path := "res://assets/chips/%s_tilt.png" % chip_name
+		if ResourceLoader.exists(tilt_path):
+			return load(tilt_path)
 	var path := "res://assets/chips/%s.png" % chip_name
 	if ResourceLoader.exists(path):
 		return load(path)
