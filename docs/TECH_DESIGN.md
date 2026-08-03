@@ -47,7 +47,7 @@ res://
 │   ├── tournament_manager.gd# 锦标赛调度 + 整体序列化
 │   ├── save_manager.gd / stats_manager.gd   # 存档 / 战绩读写
 │   └── ai/                  # ai_decider.gd（决策）/ hand_strength.gd（评分）/ ai_profiles.gd（风格+身份）
-├── scenes/                  # main.tscn（常驻）+ table.tscn（手摆槽位+UILayer）+
+├── scenes/                  # main.tscn（常驻）+ table.tscn（桌布+公共牌槽位+UILayer）+
 │                            #   main_menu/settings/result/stats.tscn（最小壳，UI 代码构建）
 ├── ui/                      # 表现层脚本与组件
 │   ├── main.gd              # Main：场景路由器 + 开局意图
@@ -221,7 +221,7 @@ func pot_size() -> int               # 全部 hand_total_bet 之和
 
 持有 `tm` 与 `event_player`。`_ready`：读 `--auto`（置 `anim_enabled=false`）与动画速度（`ANIM_SPEED = GameSettings.anim_speed()`，标准 1.0/快速 0.5，全部 tween 时长乘此系数）；按路由意图 `tm.load_save()` 恢复或 `tm.start_new(...)` 新开（config 为空用 `GameSettings.make_config()`）；**--auto/独立运行时**兜底"有存档继续、否则默认 5 AI 新局"（常量 `AI_COUNT = 5`）。
 
-场景结构（table.tscn）：`TableFelt`（桌布贴图）+ `SeatSlots/SeatSlot0..8`（9 个手摆 Marker2D，按参赛人数启用前 N 个实例化 SeatUI；0 号人类座位上移避开行动面板）+ `CommunitySlots/Slot0..4` + `DeckSlot`（发牌动画起点）+ `UILayer`（CanvasLayer：TopBar、MenuButton、StreetLabel、PotLabel、MessageLabel、BlindBanner、ActionPanel）。桌面中央下注区为常量 `POT_POS(640, 300)`。
+场景结构（table.tscn）：`TableFelt`（桌布贴图）+ `CommunitySlots/Slot0..4` + `DeckSlot`（发牌动画起点）+ `UILayer`（CanvasLayer：TopBar、MenuButton、StreetLabel、PotLabel、MessageLabel、BlindBanner、ActionPanel）。座位不再用手摆槽位，由 `_seat_position(i, N)` 沿椭圆（`SEAT_CENTER(640, 307)`、`SEAT_RADIUS(463, 193)`）等角均匀分布，0 号人类座位固定正下方（9 人时与原手摆槽位一致）。桌面中央下注区为常量 `POT_POS(640, 300)`。
 
 **桌心信息布局**（`_style_center_labels`）：街名小字压公共牌正上方，底池金色 20 号字居中，消息条与盲注横幅为药丸底色块；**顶栏 TopBar 是 HBoxContainer，`_build_top_bar` 生成"级别 / 盲注 / 距升级"三枚胶囊徽章**，`_refresh_top_bar` 只更新文本。
 
@@ -361,7 +361,7 @@ godot --headless --path . -- --auto
 12. **开局意图由 Main 持有、路由 params → `setup(params)`**：避免新增全局单例，路由与开局解耦。
 13. **设置即改即存 + SpinBox 范围与写入 clamp 双保险**：非法值不可能落盘，省掉确认交互；盲注参数只生效新锦标赛，进行中的不被半路改。
 14. **名次表由 TableScene 算好传入结算场景**（冠军 = eliminated 外存活者，其余按淘汰倒序）：table 侧有 tm 上下文；A10 彩带随之落在结算界面。
-15. **UI 主题代码构建（UITheme.apply）、座位槽位编辑器手摆 Marker2D**：跟随组件代码构建惯例，免维护二进制主题资源与运行时椭圆计算。
+15. **UI 主题代码构建（UITheme.apply）、座位位置代码计算（椭圆等角分布）**：跟随组件代码构建惯例，免维护二进制主题资源与手摆 Marker2D 槽位；人数少于 9 时座位仍均匀环绕。
 16. **--auto 模式动画跳过、音效保留**：无头冒烟需快速跑完，音效无害且能顺带验证加载。
 17. **素材与降级策略**：扑克牌用 playing-cards-assets（MIT，原 Kenney 像素牌 42×60 放大模糊已弃用）、音效用 Kenney CC0 包；空槽位框等少数贴图程序化自生成，头像/筹码/背景/奖杯/UI 贴图（庄家按钮、彩带、Logo、牌背）均为 Blender 无头渲染（脚本 `tools/blender/`，色调/图形自原程序化版提取或对齐）；飞行筹码按金额区间着色不印面值（28px 不可读，金额由座位标签显示）；贴图/音效缺失一律降级不报错（色块占位、push_warning），表现层不允许因素材问题崩溃。
 18. **事件携带状态快照（alive_seats / status），UI 不读实时 PlayerState 状态**：整手牌同步跑完后事件才逐条回放，被淘汰者的实时 status 已是 OUT；若 UI 读实时状态，全下（或将淘汰）的玩家会从手牌开始就被显示成"出局"。

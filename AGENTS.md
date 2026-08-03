@@ -25,7 +25,7 @@ godot --headless --path . --script tests/simulate.gd -- 100 1
 godot --path .
 ```
 
-本机开发用 Godot 4.6.2，项目标记 4.7，逻辑层无版本敏感特性。
+本机开发用 Godot 4.7.1（Steam 版），项目标记 4.7，逻辑层无版本敏感特性。
 
 ## 架构红线（不可违反）
 
@@ -59,4 +59,4 @@ godot --path .
 
 ## 环境备忘
 
-- 项目根是 git 仓库，提交前确认 `git status` 只包含本次改动；Godot 可执行文件在 `E:\ProgramData\godot\godot.exe`（不在 PATH，命令里的 `godot` 需替换为全路径）。
+- 项目根是 git 仓库，提交前确认 `git status` 只包含本次改动；Godot 可执行文件在 `E:\SteamLibrary\steamapps\common\Godot Engine\godot.windows.opt.tools.64.exe`（不在 PATH，命令里的 `godot` 需替换为全路径）。

@@ -4,6 +4,9 @@ class_name TableScene extends Node2D
 
 const AI_COUNT := 5
 const SEAT_OFFSET := Vector2(-85, -65)
+## 座位布局椭圆：N 个座位沿椭圆等角均匀分布，0 号（人类）固定在正下方。
+const SEAT_CENTER := Vector2(640, 307)
+const SEAT_RADIUS := Vector2(463, 193)
 const COMMUNITY_OFFSET := Vector2(-28, -40)
 ## 全局动画速度系数（标准 1.0 / 快速 0.5），所有 tween 时长乘此系数；
 ## _ready 时从设置读取（GameSettings.anim_speed）。
@@ -57,7 +60,6 @@ var _badge_level: Label
 var _badge_blinds: Label
 var _badge_hands: Label
 
-@onready var _seat_slots: Node2D = $SeatSlots
 @onready var _community_slots: Node2D = $CommunitySlots
 @onready var _deck_slot: Marker2D = $DeckSlot
 @onready var _top_bar: HBoxContainer = $UILayer/TopBar
@@ -93,11 +95,11 @@ func _ready() -> void:
 			config = GameSettings.make_config()
 		tm.start_new(config, main.table_ai_count)
 
-	# 按参赛人数启用前 N 个手摆座位槽位
-	var slots := _seat_slots.get_children()
-	for i in tm.players.size():
+	# 按参赛人数沿椭圆均匀摆座位（人少时不再挤在左半边）
+	var count := tm.players.size()
+	for i in count:
 		var seat := SeatUI.new()
-		seat.position = slots[i].position + SEAT_OFFSET
+		seat.position = _seat_position(i, count) + SEAT_OFFSET
 		add_child(seat)
 		seat.bind_player(tm.players[i])
 		seats.append(seat)
@@ -501,6 +503,12 @@ static func _chip_texture(amount: int, tilt: bool = false) -> Texture2D:
 
 func _seat_center(seat: SeatUI) -> Vector2:
 	return seat.position + Vector2(SeatUI.WIDTH / 2.0, 40)
+
+
+## 座位 i/N 的桌面坐标：0 号在椭圆正下方，其余逆时针等角排布（9 人时与原手摆槽位一致）。
+static func _seat_position(index: int, count: int) -> Vector2:
+	var angle := deg_to_rad(90.0 + 360.0 * index / count)
+	return SEAT_CENTER + Vector2(cos(angle), sin(angle)) * SEAT_RADIUS
 
 
 ## 顶栏胶囊徽章：级别 / 盲注 / 距升级 三个药丸（替代原来的整行纯文本）。

@@ -13,35 +13,6 @@ offset_bottom = 720.0
 texture = ExtResource("3")
 expand_mode = 1
 
-[node name="SeatSlots" type="Node2D" parent="."]
-
-[node name="SeatSlot0" type="Marker2D" parent="SeatSlots"]
-position = Vector2(640, 500)
-
-[node name="SeatSlot1" type="Marker2D" parent="SeatSlots"]
-position = Vector2(338, 506)
-
-[node name="SeatSlot2" type="Marker2D" parent="SeatSlots"]
-position = Vector2(177, 370)
-
-[node name="SeatSlot3" type="Marker2D" parent="SeatSlots"]
-position = Vector2(233, 215)
-
-[node name="SeatSlot4" type="Marker2D" parent="SeatSlots"]
-position = Vector2(479, 114)
-
-[node name="SeatSlot5" type="Marker2D" parent="SeatSlots"]
-position = Vector2(801, 114)
-
-[node name="SeatSlot6" type="Marker2D" parent="SeatSlots"]
-position = Vector2(1047, 215)
-
-[node name="SeatSlot7" type="Marker2D" parent="SeatSlots"]
-position = Vector2(1103, 370)
-
-[node name="SeatSlot8" type="Marker2D" parent="SeatSlots"]
-position = Vector2(942, 506)
-
 [node name="CommunitySlots" type="Node2D" parent="."]
 
 [node name="Slot0" type="Marker2D" parent="CommunitySlots"]
