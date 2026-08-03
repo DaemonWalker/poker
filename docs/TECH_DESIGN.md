@@ -197,7 +197,7 @@ func pot_size() -> int               # 全部 hand_total_bet 之和
 | DEAL_FLOP | cards(3) | 发翻牌（3 张一并给出） |
 | DEAL_TURN / DEAL_RIVER | card | 转牌 / 河牌 |
 | ROUND_END | pot | 本轮下注收拢后的底池总额 |
-| SHOWDOWN | reveals: [{seat, cards, hand_name}] | 摊牌，公开全部未弃牌者 |
+| SHOWDOWN | reveals: [{seat, cards, best, hand_name}] | 摊牌，公开全部未弃牌者；best 为 HandEvaluator.best_five 选出的最佳五张组合 |
 | POT_AWARD | seat, amount, pot_index, hand_name | 收池（提前判胜时 hand_name 为空串） |
 | ELIMINATED | seat, rank | 淘汰；rank 由 HandController 算好（同手按手始筹码排名） |
 | BLIND_UP | level, sb, bb | 盲注升级 |
@@ -225,15 +225,17 @@ func pot_size() -> int               # 全部 hand_total_bet 之和
 
 **桌心信息布局**（`_style_center_labels`）：街名小字压公共牌正上方，底池金色 20 号字居中，消息条与盲注横幅为药丸底色块；**顶栏 TopBar 是 HBoxContainer，`_build_top_bar` 生成"级别 / 盲注 / 距升级"三枚胶囊徽章**，`_refresh_top_bar` 只更新文本。
 
-**主循环** `_run_tournament()`：`while not tm.finished and not _exit_to_menu: tm.run_next_hand() → event_player.play_events(...) → await queue_drained`。**顶栏"主菜单"按钮只置 `_exit_to_menu` 标志位，在手牌边界生效切场景**（进度已自动保存；中途释放场景会打断本循环的 await）。--auto 下隐藏菜单按钮。
+**主循环** `_run_tournament()`：`while not tm.finished and not _exit_to_menu: tm.run_next_hand() → event_player.play_events(...) → await queue_drained`（本手按过"跳过本局"则再 `await skip_popup_confirmed` 等摘要弹窗确认）。**顶栏"主菜单"按钮只置 `_exit_to_menu` 标志位，在手牌边界生效切场景**（进度已自动保存；中途释放场景会打断本循环的 await）。--auto 下隐藏菜单按钮。
+
+**跳过本局**（`_build_skip_button` / `_build_skip_popup`）：人类弃牌的 PLAYER_ACTION 后右下角显示"跳过本局"按钮（auto 不显示）；点击置 `_skip_active`、`anim_enabled=false`、`event_player.fast_forward=true`，本手剩余事件瞬间播完，HAND_END 恢复原节奏。期间各 `on_xxx` 把事件写入 `_skip_sections`（按街分节：`_street` 由 `_set_street` 维护、`_community_dealt` 由发牌事件累积，供节标题与摊牌节公共牌行使用）；主循环在 `queue_drained` 后若 `_skip_has_content()` 则弹摘要弹窗（RichTextLabel：节标题加粗、行间全角缩进、节间空行、收池金色/淘汰灰色），摊牌节用 reveal 的 `best` 字段展示各牌手最佳五张组合。点"继续下一局"emit `skip_popup_confirmed`。
 
 **事件→UI 映射**（`on_xxx` 由 EventPlayer 逐一 await 调用）：A1 发牌飞行 / A2 公共牌翻面 / A3 筹码到池 / A4 筹码到座 / A5 摊牌翻面 / A6 座位高亮 / A7 淘汰淡出 / A8 盲注横幅，各自顺带触发 S1~S8 音效；DEAL_HOLE 时顺带刷新筹码与盲注下注显示（盲注无事件）。`on_action_required`：存 legal、高亮座位，`auto_play` 直接返回，否则 `_action_panel.show_for(legal, pot_size, deadline_ms, bb)`。`on_tournament_end`：auto 直接 `quit()`；否则 `_build_standings()` 算好名次表（冠军 = eliminated 之外的存活者，其余按 eliminated 倒序）随 params 切 result 场景。面板回调：玩家提交 → `event_player.deliver_human_action(action)`；**超时自动动作 = 可过牌则过牌否则弃牌**。`_spawn_chip(pos, amount)` 生成飞行筹码（按金额区间着色，见第 9 章）。
 
 ### 5.3 EventPlayer（ui/event_player.gd，动画编排）
 
-事件队列 `_queue`；`play_events(events)` 入队并启动 `_drain()`：逐条 `await _dispatch(event)`，空了发 `queue_drained`。分发到 `table.on_xxx` 后按类型插入间隔（DELAY_SHORT 0.25 / NORMAL 0.45 / LONG 1.0 / HAND_END 0.8；auto 模式统一 0.03）。
+事件队列 `_queue`；`play_events(events)` 入队并启动 `_drain()`：逐条 `await _dispatch(event)`，空了发 `queue_drained`。分发到 `table.on_xxx` 后按类型插入间隔（DELAY_SHORT 0.25 / NORMAL 0.45 / LONG 1.0 / HAND_END 0.8；auto 或 `fast_forward`（跳过本局）模式统一 0.03）。
 
-- **A9 思考延迟在本层**：PLAYER_ACTION 分支，非 auto 且行动者是 AI 时先 `table.play_thinking(seat, randf_range(0.5, 1.5))` 再播行动动画。
+- **A9 思考延迟在本层**：PLAYER_ACTION 分支，非 auto、非 fast_forward 且行动者是 AI 时先 `table.play_thinking(seat, randf_range(0.5, 1.5))` 再播行动动画。
 - **ACTION_REQUIRED**：调 `table.on_action_required` 后停住——auto 模式 `_auto_choose`（能过牌则过牌、否则跟注、再不行弃牌）直接代打；正常模式 `await human_action` 信号。动作经 `tm.submit_human_action()` 提交，新事件入队继续。
 - `deliver_human_action(action)` 是 TableScene 转交玩家输入的入口。
 

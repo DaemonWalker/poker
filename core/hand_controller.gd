@@ -298,6 +298,7 @@ func _showdown_and_settle() -> void:
 			seven.append_array(community)
 			var r := HandEvaluator.evaluate(seven)
 			reveals.append({"seat": p.seat_index, "cards": p.hole_cards.duplicate(),
+					"best": HandEvaluator.best_five(seven),
 					"hand_name": HandEvaluator.category_name(r.category)})
 	events.append(Events.showdown(reveals))
 

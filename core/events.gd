@@ -11,7 +11,7 @@ enum Type {
 	DEAL_TURN,         # {card}
 	DEAL_RIVER,        # {card}
 	ROUND_END,         # {pot}(收拢本轮下注后的底池总额)
-	SHOWDOWN,          # {reveals: [{seat, cards, hand_name}]}
+	SHOWDOWN,          # {reveals: [{seat, cards, best(最佳五张), hand_name}]}
 	POT_AWARD,         # {seat, amount, pot_index, hand_name}
 	ELIMINATED,        # {seat, rank}
 	BLIND_UP,          # {level, sb, bb}

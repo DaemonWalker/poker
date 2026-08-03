@@ -75,6 +75,11 @@ func test_all_in_side_pots() -> void:
 			for r in e.reveals:
 				if r.seat == 1 and r.hand_name == "皇家同花顺":
 					royal_seen = true
+					var best_names: Array = []
+					for c in r.best:
+						best_names.append((c as Card).to_string_short())
+					best_names.sort()
+					expect_eq(best_names, ["As", "Js", "Ks", "Qs", "Ts"], "best 应为皇家同花顺五张")
 		if e.type == Events.Type.POT_AWARD:
 			awards[e.seat] = e.amount
 	check(showdown_seen, "全下跑完公共牌后应摊牌")

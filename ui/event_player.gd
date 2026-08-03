@@ -15,6 +15,8 @@ const DELAY_AUTO := 0.03
 var tm: TournamentManager
 var table: TableScene
 var auto_play := false
+## 跳过本局（人类弃牌后点"跳过本局"置位）：省略思考延迟与事件间隔，瞬间播完剩余事件。
+var fast_forward := false
 
 var _queue: Array[Dictionary] = []
 var _playing := false
@@ -51,7 +53,7 @@ func _dispatch(event: Dictionary) -> void:
 			await _wait(DELAY_SHORT)
 		Events.Type.PLAYER_ACTION:
 			# A9 思考中：AI 行动前随机延迟 + 省略号动效（GDD 4.3）
-			if not auto_play and not tm.players[event.seat].is_human:
+			if not auto_play and not fast_forward and not tm.players[event.seat].is_human:
 				await table.play_thinking(event.seat, randf_range(0.5, 1.5))
 			await table.on_player_action(event)
 			await _wait(DELAY_NORMAL)
@@ -108,4 +110,4 @@ func _auto_choose(legal: Dictionary) -> Dictionary:
 
 
 func _wait(sec: float) -> void:
-	await get_tree().create_timer(DELAY_AUTO if auto_play else sec).timeout
+	await get_tree().create_timer(DELAY_AUTO if (auto_play or fast_forward) else sec).timeout
