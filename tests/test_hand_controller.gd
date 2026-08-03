@@ -123,6 +123,47 @@ func test_blind_all_in_heads_up() -> void:
 	expect_eq(players[0].status != PlayerState.Status.OUT, true, "座位 0 不应淘汰")
 
 
+## PLAYER_ACTION 事件金额：跟注/全下取本动作实际付出筹码（动作字典不带金额），加注取目标总额
+func test_player_action_amount() -> void:
+	var players := _make_human_players([1000, 1000, 1000] as Array[int])
+	var hc := HandController.new(players, 0, 10, 20, 1, AIDecider.new(1), 1)
+	hc.start()
+
+	var actions: Array[Dictionary] = []
+	var collect := func() -> void:
+		for e in hc.pop_events():
+			if e.type == Events.Type.PLAYER_ACTION:
+				actions.append(e)
+	collect.call()
+
+	# 翻牌前（按钮 0，小盲 1，大盲 2，UTG 0 先行动）
+	hc.submit_human_action(call_action())   # 座位 0 跟注 20
+	collect.call()
+	hc.submit_human_action(call_action())   # 座位 1 补差额 10
+	collect.call()
+	hc.submit_human_action(check_action())  # 座位 2 过牌
+	collect.call()
+	# 翻牌圈（座位 1 先行动）
+	hc.submit_human_action(check_action())  # 座位 1 过牌
+	hc.submit_human_action(check_action())  # 座位 2 过牌
+	hc.submit_human_action(raise_to(50))    # 座位 0 加注到 50
+	hc.submit_human_action(all_in())        # 座位 1 全下（实付 980）
+	hc.submit_human_action(fold())          # 座位 2 弃牌
+	hc.submit_human_action(call_action())   # 座位 0 跟注 930（全下）
+	collect.call()
+	check(hc.is_finished(), "双方全下后手牌应直接跑完")
+
+	expect_eq(actions.size(), 9, "应有 9 条 PLAYER_ACTION")
+	if actions.size() == 9:
+		expect_eq(actions[0].amount, 20, "UTG 跟注额")
+		expect_eq(actions[1].amount, 10, "小盲跟注补差额")
+		expect_eq(actions[2].amount, 0, "大盲过牌无金额")
+		expect_eq(actions[5].amount, 50, "加注取目标总额")
+		expect_eq(actions[6].amount, 980, "全下取实付筹码")
+		expect_eq(actions[6].action, BettingRound.ActionType.ALL_IN, "座位 1 应为全下")
+		expect_eq(actions[8].amount, 930, "全下跟注取实付筹码")
+
+
 ## 同一种子 + 同一 AI 种子 → 两次运行结果完全一致
 func test_seed_reproducible() -> void:
 	var run_once := func() -> Array:

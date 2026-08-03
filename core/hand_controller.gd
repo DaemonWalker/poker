@@ -75,9 +75,10 @@ func submit_human_action(action: Dictionary) -> bool:
 		push_error("HandController: 当前没有等待中的人类回合")
 		return false
 	var p := _by_seat(waiting_seat)
+	var chips_before := p.chips
 	if not round.apply_action(p, action):
 		return false  # 保持挂起，由表现层重试
-	events.append(Events.player_action(p.seat_index, action.get("type", -1), action.get("amount", 0), p.chips, p.status))
+	events.append(Events.player_action(p.seat_index, action.get("type", -1), _event_amount(p, action, chips_before), p.chips, p.status))
 	waiting_seat = -1
 	run()
 	return true
@@ -103,6 +104,14 @@ func pot_size() -> int:
 	for p in players:
 		total += p.hand_total_bet
 	return total
+
+
+## PLAYER_ACTION 事件金额：加注取动作里的目标总额（"加注到"语义）；
+## 跟注/全下的动作字典不带金额，取本动作实际付出的筹码（过牌/弃牌自然为 0）。
+func _event_amount(p: PlayerState, action: Dictionary, chips_before: int) -> int:
+	if action.get("type", -1) == BettingRound.ActionType.RAISE:
+		return action.get("amount", 0)
+	return chips_before - p.chips
 
 
 func _step() -> void:
@@ -134,6 +143,7 @@ func _step() -> void:
 		"chips": actor.chips,
 		"profile": actor.ai_profile,
 	})
+	var chips_before := actor.chips
 	if not round.apply_action(actor, action):
 		# AI 产出非法动作属实现错误：降级为 过牌/跟注/弃牌 保底
 		push_error("HandController: AI 动作被 BettingRound 拒绝，使用保底动作")
@@ -144,7 +154,7 @@ func _step() -> void:
 		else:
 			action = {"type": BettingRound.ActionType.FOLD}
 		round.apply_action(actor, action)
-	events.append(Events.player_action(actor.seat_index, action.get("type", -1), action.get("amount", 0), actor.chips, actor.status))
+	events.append(Events.player_action(actor.seat_index, action.get("type", -1), _event_amount(actor, action, chips_before), actor.chips, actor.status))
 
 
 # ---- 盲注与发牌 ----

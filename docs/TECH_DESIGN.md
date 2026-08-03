@@ -193,7 +193,7 @@ func pot_size() -> int               # 全部 hand_total_bet 之和
 | HAND_START | hand_no, button_seat, sb, bb, alive_seats | 一手开始；alive_seats = 本手参与者座位快照 |
 | DEAL_HOLE | seat, cards, status | 发底牌；**AI 的 cards 为 []（不公开）**，人类为 2 张；status 为发牌时状态快照 |
 | ACTION_REQUIRED | seat, legal_actions, deadline_ms | 人类回合，**事件队列在此停住**等待提交 |
-| PLAYER_ACTION | seat, action, amount, chips_left, status | 一次有效行动（**盲注无此事件**，UI 在 DEAL_HOLE 时顺带刷新筹码/下注显示）；status 为动作后状态快照 |
+| PLAYER_ACTION | seat, action, amount, chips_left, status | 一次有效行动（**盲注无此事件**，UI 在 DEAL_HOLE 时顺带刷新筹码/下注显示）；status 为动作后状态快照；**amount：加注取目标总额（"加注到"语义），跟注/全下取本动作实际付出筹码（由 HandController 结算，动作字典本身不带金额）** |
 | DEAL_FLOP | cards(3) | 发翻牌（3 张一并给出） |
 | DEAL_TURN / DEAL_RIVER | card | 转牌 / 河牌 |
 | ROUND_END | pot | 本轮下注收拢后的底池总额 |
