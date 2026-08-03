@@ -7,6 +7,10 @@ const WIDTH := 170.0
 const COLOR_BORDER := Color(0.30, 0.33, 0.37)
 const COLOR_HIGHLIGHT := Color(0.95, 0.78, 0.30)
 
+## tilt 气泡：低于该值隐藏，达到 SEVERE 换更强烈的表情
+const TILT_SHOW := 0.25
+const TILT_SEVERE := 0.6
+
 var seat_index: int = -1
 
 var _avatar_frame: PanelContainer
@@ -18,6 +22,8 @@ var _status_label: Label
 var _dealer_badge: Control
 var _thinking_label: Label
 var _skill_row: HBoxContainer
+var _tilt_bubble: PanelContainer
+var _tilt_label: Label
 var _cards: Array[CardUI] = []
 var _bg: StyleBoxFlat
 var _highlight_tween: Tween
@@ -162,6 +168,33 @@ func _ready() -> void:
 		_cards.append(c)
 	hide_cards()
 
+	# tilt 情绪气泡：浮在头像框左上方（overlay 为无布局 Control，气泡位置不受容器管理）
+	var overlay := Control.new()
+	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(overlay)
+	_tilt_bubble = PanelContainer.new()
+	_tilt_bubble.position = Vector2(-8, -34)
+	_tilt_bubble.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var b_style := StyleBoxFlat.new()
+	b_style.bg_color = Color(0.96, 0.96, 0.94, 0.95)
+	b_style.set_corner_radius_all(9)
+	b_style.set_border_width_all(1)
+	b_style.border_color = Color(0.25, 0.26, 0.30)
+	b_style.content_margin_left = 5
+	b_style.content_margin_right = 5
+	b_style.content_margin_top = 2
+	b_style.content_margin_bottom = 2
+	_tilt_bubble.add_theme_stylebox_override("panel", b_style)
+	_tilt_bubble.visible = false
+	overlay.add_child(_tilt_bubble)
+	_tilt_label = Label.new()
+	_tilt_label.add_theme_font_size_override("font_size", 18)
+	# emoji 需系统彩色字体回退（默认字体无 emoji 字形）
+	var emoji_font := SystemFont.new()
+	emoji_font.font_names = ["Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji"]
+	_tilt_label.add_theme_font_override("font", emoji_font)
+	_tilt_bubble.add_child(_tilt_label)
+
 
 ## 绑定玩家数据（座位初始化与每手开始刷新用）。
 func bind_player(p: PlayerState) -> void:
@@ -252,6 +285,17 @@ func set_thinking(on: bool) -> void:
 		_thinking_tween.tween_property(_thinking_label, "modulate:a", 1.0, 0.5)
 	else:
 		_thinking_label.modulate = Color.WHITE
+
+
+## tilt 情绪气泡（emoji）：dir > 0 为报复性上头（怒），<= 0 为吓怂收紧（慌）。
+## level < TILT_SHOW 隐藏，>= TILT_SEVERE 换更强烈的表情。
+func set_tilt(level: float, dir: float) -> void:
+	if level < TILT_SHOW:
+		_tilt_bubble.visible = false
+		return
+	var severe := level >= TILT_SEVERE
+	_tilt_label.text = ("🤬" if severe else "😡") if dir > 0.0 else ("😱" if severe else "😟")
+	_tilt_bubble.visible = true
 
 
 ## 人类：亮牌面。

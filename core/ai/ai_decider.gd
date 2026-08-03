@@ -1,11 +1,15 @@
 class_name AIDecider extends RefCounted
-## AI 决策（TECH_DESIGN 4.6）：评分 → 风格调制 → 动作选择，三步启发式。
+## AI 决策（TECH_DESIGN 4.6）：评分 → 风格+情绪调制 → 动作选择，三步启发式。
+## 有效参数 = 静态风格（AIProfiles）+ tilt_level × 人格 tilt 方向（AIMemory，可选）。
 ## decide(ctx) 的返回永远在 ctx.legal_actions 允许的集合内（末尾做钳制校验）。
 
-## 剩余筹码低于该倍数大盲时触发全下倾向
-const SHORT_STACK_BB := 8.0
-## 跟注额超过剩余筹码该比例时视为"贵注"
-const EXPENSIVE_CALL_RATIO := 0.25
+## 入局阈值基准：实际阈值 = BASE_ENTRY - 有效松度 × 0.35，再按位置/对手数微调
+const BASE_ENTRY := 0.55
+## 强牌分数线（≥ 按激进度加注，否则跟注/过牌）
+const STRONG_HAND := 0.78
+## tilt 对松度/诈唬的最大调制幅度
+const TILT_LOOSENESS_SCALE := 0.35
+const TILT_BLUFF_SCALE := 0.30
 
 var rng := RandomNumberGenerator.new()
 
@@ -17,51 +21,64 @@ func _init(rng_seed: int = 0) -> void:
 		rng.randomize()
 
 
-## ctx: {hole_cards, community, legal_actions, pot_size, call_amount, street, big_blind, chips, profile}
+## ctx: {hole_cards, community, legal_actions, pot_size, call_amount, street, big_blind, chips, profile,
+##       position(可选 -1~1，按钮位为 1), active_opponents(可选), memory(可选 AIMemory，只读)}
 ## 返回 {type: BettingRound.ActionType, amount: int}
 func decide(ctx: Dictionary) -> Dictionary:
 	var legal: Dictionary = ctx.legal_actions
-	var profile: Dictionary = AIProfiles.get_profile(ctx.get("profile", AIProfiles.PROFILE_TAG))
-	var looseness: float = profile.looseness
-	var aggression: float = profile.aggression
-	var bluff: float = profile.bluff_frequency
+	var profile: Dictionary = AIProfiles.get_profile(ctx.get("profile", AIProfiles.DEFAULT_PROFILE))
+	var tightness := float(profile.tightness)
+	var aggression := float(profile.aggression)
+	var risk := float(profile.risk_tolerance)
+
+	# 情绪调制：tilt=0 时等价基础参数；memory 只读，不在决策期更新
+	var tilt := 0.0
+	var mem: AIMemory = ctx.get("memory")
+	if mem != null:
+		tilt = mem.tilt_level
+	var eff_looseness := clampf(1.0 - tightness + tilt * float(profile.tilt_looseness_dir) * TILT_LOOSENESS_SCALE, 0.0, 1.0)
+	var eff_bluff := clampf(float(profile.bluff_frequency) + tilt * float(profile.tilt_bluff_dir) * TILT_BLUFF_SCALE, 0.0, 1.0)
 
 	var s := HandStrength.score(ctx.hole_cards, ctx.community)
 	var bb: int = maxi(ctx.get("big_blind", 20), 1)
 	var chips: int = ctx.get("chips", 0)
 	var call_amount: int = ctx.get("call_amount", 0)
-	var pot: int = ctx.get("pot_size", 0)
 
-	# 风格调制：松度降低入局门槛，低筹码触发全下倾向
-	var entry_threshold := 0.55 - looseness * 0.35  # 值得"投入"的评分线
-	var short_stack := float(chips) < SHORT_STACK_BB * float(bb)
+	# 入局阈值：松度为主；位置意识使后位放宽/前位收紧；多人底池收紧
+	var entry := BASE_ENTRY - eff_looseness * 0.35
+	entry -= float(profile.position_awareness) * 0.12 * float(ctx.get("position", 0.0))
+	var opps: int = ctx.get("active_opponents", 1)
+	entry += 0.03 * float(mini(opps - 1, 3))
+
+	# 短筹码触发线：4BB（保守）~ 12BB（激进），由风险承受决定
+	var short_stack := float(chips) < (4.0 + risk * 8.0) * float(bb)
 
 	var action := {}
-	if short_stack and s >= entry_threshold * 0.7 and legal.can_all_in:
+	if short_stack and s >= entry * 0.7 and legal.can_all_in:
 		# 低筹码：够看的牌直接全下
 		action = {"type": BettingRound.ActionType.ALL_IN}
-	elif s >= 0.78:
+	elif s >= STRONG_HAND:
 		# 强牌：按激进度加注，否则跟注/过牌
 		if legal.can_raise and rng.randf() < aggression:
 			action = _make_raise(ctx, aggression, 1.0)
 		else:
 			action = _call_or_check(legal)
-	elif s >= entry_threshold:
+	elif s >= entry:
 		# 中牌：可跟则跟，便宜加注偶尔施压
 		if legal.can_raise and call_amount == 0 and rng.randf() < aggression * 0.35:
 			action = _make_raise(ctx, aggression, 0.6)
-		elif _can_afford_call(legal, call_amount, chips):
+		elif _can_afford_call(legal, call_amount, chips, risk):
 			action = _call_or_check(legal)
 		elif legal.can_check:
 			action = {"type": BettingRound.ActionType.CHECK}
 		else:
 			action = {"type": BettingRound.ActionType.FOLD}
-	elif rng.randf() < bluff and legal.can_raise and call_amount == 0:
+	elif call_amount > 0 and _can_afford_call(legal, call_amount, chips, risk) and rng.randf() < float(profile.calling_tendency):
+		# 跟注倾向：弱牌也愿意跟便宜注（跟注站风格的核心维度）
+		action = {"type": BettingRound.ActionType.CALL}
+	elif rng.randf() < eff_bluff and legal.can_raise and call_amount == 0:
 		# 诈唬：无人下注时下注施压
 		action = _make_raise(ctx, aggression, 0.5)
-	elif profile == AIProfiles.PROFILES[AIProfiles.PROFILE_STATION] and _can_afford_call(legal, call_amount, chips):
-		# 跟注站：弱牌也爱跟便宜注
-		action = _call_or_check(legal)
 	elif legal.can_check:
 		action = {"type": BettingRound.ActionType.CHECK}
 	else:
@@ -88,11 +105,11 @@ func _call_or_check(legal: Dictionary) -> Dictionary:
 	return {"type": BettingRound.ActionType.CHECK}
 
 
-## 跟注站纪律：跟注额不超过剩余筹码 ¼ 或 2 倍大盲即"便宜"。
-func _can_afford_call(legal: Dictionary, call_amount: int, chips: int) -> bool:
+## 跟注纪律：跟注额不超过剩余筹码的一定比例即"便宜"，比例由风险承受决定（10% ~ 40%）。
+func _can_afford_call(legal: Dictionary, call_amount: int, chips: int, risk: float) -> bool:
 	if not legal.can_call:
 		return legal.can_check
-	return float(call_amount) <= EXPENSIVE_CALL_RATIO * float(maxi(chips, 1))
+	return float(call_amount) <= (0.1 + risk * 0.3) * float(maxi(chips, 1))
 
 
 ## 终点钳制：无论决策产出什么，都校验成合法动作。

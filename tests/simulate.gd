@@ -93,6 +93,6 @@ func _drive_waiting(tm: TournamentManager) -> void:
 			"legal_actions": legal, "pot_size": hc.pot_size(),
 			"call_amount": legal.call_amount, "street": hc.street,
 			"big_blind": hc.big_blind, "chips": p.chips,
-			"profile": AIProfiles.PROFILE_TAG,
+			"profile": AIProfiles.DEFAULT_PROFILE,
 		})
 		tm.submit_human_action(action)

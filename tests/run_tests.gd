@@ -8,6 +8,7 @@ func _init() -> void:
 		preload("res://tests/test_hand_evaluator.gd").new(),
 		preload("res://tests/test_betting_round.gd").new(),
 		preload("res://tests/test_pot_manager.gd").new(),
+		preload("res://tests/test_ai_memory.gd").new(),
 		preload("res://tests/test_hand_controller.gd").new(),
 		preload("res://tests/test_tournament.gd").new(),
 		preload("res://tests/test_save_load.gd").new(),

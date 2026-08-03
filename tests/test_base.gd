@@ -68,7 +68,7 @@ static func rigged_deck(draw_order: Array[Card]) -> Deck:
 
 
 ## HandController 等待中座位的 AI 决策上下文。
-static func make_decision_ctx(hc: HandController, seat: int, profile := AIProfiles.PROFILE_TAG) -> Dictionary:
+static func make_decision_ctx(hc: HandController, seat: int, profile := AIProfiles.DEFAULT_PROFILE) -> Dictionary:
 	var p: PlayerState = null
 	for q in hc.players:
 		if q.seat_index == seat:

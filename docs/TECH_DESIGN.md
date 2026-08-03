@@ -46,7 +46,7 @@ res://
 │   ├── events.gd            # 事件类型枚举 + 工厂函数
 │   ├── tournament_manager.gd# 锦标赛调度 + 整体序列化
 │   ├── save_manager.gd / stats_manager.gd   # 存档 / 战绩读写
-│   └── ai/                  # ai_decider.gd（决策）/ hand_strength.gd（评分）/ ai_profiles.gd（风格+身份）
+│   └── ai/                  # ai_decider.gd（决策）/ hand_strength.gd（评分）/ ai_profiles.gd（风格+身份）/ ai_memory.gd（情绪）
 ├── scenes/                  # main.tscn（常驻）+ table.tscn（桌布+公共牌槽位+UILayer）+
 │                            #   main_menu/settings/result/stats.tscn（最小壳，UI 代码构建）
 ├── ui/                      # 表现层脚本与组件
@@ -154,7 +154,7 @@ func pot_size() -> int               # 全部 hand_total_bet 之和
 
 流程：HAND_START → **盲注静默扣除**（`_post_blind` 直接改筹码/下注，**不产生 PLAYER_ACTION 事件**；筹码不足按全下）→ 逐张发底牌（从小盲位起，DEAL_HOLE ×人数；单挑时按钮位下小盲、从按钮位发起）→ 四轮下注（每轮结束 ROUND_END，随后发公共牌事件）→ 摊牌（SHOWDOWN，公开全部未弃牌者手牌与牌型名）或提前判胜（仅剩一名未弃牌者，直接 POT_AWARD 不摊牌、牌型名为空串）→ PotManager 结算（POT_AWARD ×n）→ 淘汰检测（ELIMINATED ×n，**同手淘汰者按本手开始时筹码多少排名，多者名次靠前**，名次从本手开始时的存活数倒排）→ HAND_END。
 
-人类回合：置 `waiting_seat` 并发 ACTION_REQUIRED 后挂起。AI 回合：同步调 `ai_decider.decide(ctx)`；**AI 产出非法动作属实现错误，降级为过牌/跟注/弃牌保底**（push_error）。决策上下文 ctx 键：`hole_cards, community, legal_actions, pot_size, call_amount, street, big_blind, chips, profile`。
+人类回合：置 `waiting_seat` 并发 ACTION_REQUIRED 后挂起。AI 回合：同步调 `ai_decider.decide(ctx)`；**AI 产出非法动作属实现错误，降级为过牌/跟注/弃牌保底**（push_error）。决策上下文 ctx 键：`hole_cards, community, legal_actions, pot_size, call_amount, street, big_blind, chips, profile, position, active_opponents, memory`（position = 位置系数 -1~1，按钮位为 1；memory = 该座位的 AIMemory，决策期只读）。
 
 ### 3.8 Events（core/events.gd）
 
@@ -165,24 +165,25 @@ func pot_size() -> int               # 全部 hand_total_bet 之和
 锦标赛调度 + 整体序列化。持有 `config / players / button_seat / blind_level / hands_played / hand_count_total / eliminated / finished` 与 `_rng`（`RandomNumberGenerator`）。
 
 - `TournamentConfig`（内部类）：`starting_chips=1000`、`hands_per_level=10`、`blind_levels` 10 级表（10/20…200/400）、`easy_mode=false`（简单模式，洗牌偏向人类）；`blinds_at(level)` 超表后末级 × `1 << (level - 9)` 翻倍；`to_dict/from_dict`。
-- `start_new(config, ai_count, rng_seed := 0)`：人类坐 0 号位（名字"你"、`avatar_human`）；AI 身份从 `AIProfiles.IDENTITIES` 洗牌抽取（不重复），风格按 `IDENTITY_PREFERRED_PROFILE` 配对；按钮位随机。开局即存档。
-- `run_next_hand()`：`deck_seed := _rng.randi()`，以**同一手牌种子**构造 Deck 洗牌与 `AIDecider.new(deck_seed)`——存档恢复后决策序列可复现；`config.easy_mode` 时把人类座位作为 `rig_seat` 传入 HandController；执行一手并转发事件；手牌结束走 `_after_hand_end`。
-- `_after_hand_end`：记录淘汰（按 ELIMINATED 事件顺序）→ 更新战绩（总手数、人类赢池、筹码峰值）→ 胜负判定（人类出局 → TOURNAMENT_LOSE{rank}；仅剩人类 → TOURNAMENT_WIN）→ 按钮移到下一存活座位 → 够手数则盲注升级（BLIND_UP）→ 战绩落盘 + 自动存档。`_tournament_end` 时 `save_manager.clear()` 清进度存档。
+- `start_new(config, ai_count, rng_seed := 0)`：人类坐 0 号位（名字"你"、`avatar_human`）；AI 身份从 `AIProfiles.IDENTITIES` 洗牌抽取（不重复），`ai_profile` 即身份名（行为参数见 `AIProfiles.PROFILES`）；每个 AI 建一份 `AIMemory` 存入 `ai_memories`；按钮位随机。开局即存档。
+- `run_next_hand()`：`deck_seed := _rng.randi()`，以**同一手牌种子**构造 Deck 洗牌与 `AIDecider.new(deck_seed)`——存档恢复后决策序列可复现；`config.easy_mode` 时把人类座位作为 `rig_seat` 传入 HandController；`ai_memories` 共享引用传入 HandController；**hand.start() 前快照各玩家筹码**（`_chips_before_hand`）；执行一手并转发事件；手牌结束走 `_after_hand_end`。
+- `_after_hand_end`：**AI 情绪更新（本手盈亏喂 `AIMemory.notify_hand_result`，输大锅触发 tilt）** → 记录淘汰（按 ELIMINATED 事件顺序）→ 更新战绩（总手数、人类赢池、筹码峰值）→ 胜负判定（人类出局 → TOURNAMENT_LOSE{rank}；仅剩人类 → TOURNAMENT_WIN）→ 按钮移到下一存活座位 → 够手数则盲注升级（BLIND_UP）→ 战绩落盘 + 自动存档。`_tournament_end` 时 `save_manager.clear()` 清进度存档。
 - 其余接口：`submit_human_action(action)` / `is_waiting_for_human()` / `pop_events()` / `alive_count()` / `human()` / `load_save() -> bool`（无存档或版本不匹配返回 false）/ `to_dict` / `from_dict`。
 
 ### 3.10 SaveManager（core/save_manager.gd）
 
-`user://save/tournament.save`，JSON（tab 缩进，人可读）。`has_save() / load()（损坏返回 {}）/ save(data) / clear()`。路径可注入（测试/模拟用临时路径）。版本校验由 `TournamentManager.from_dict` 负责（`SAVE_VERSION = 1`）。
+`user://save/tournament.save`，JSON（tab 缩进，人可读）。`has_save() / load()（损坏返回 {}）/ save(data) / clear()`。路径可注入（测试/模拟用临时路径）。版本校验由 `TournamentManager.from_dict` 负责（`SAVE_VERSION = 2`）。
 
 ### 3.11 StatsManager（core/stats_manager.gd）
 
 `user://save/stats.save`，JSON `{version, stats}`（`STATS_VERSION = 1`）。`data: StatsData` 字段：`games_played / wins / top3 / total_hands / pots_won / chip_peak / rank_distribution[9]`。构造时自动 load。`record_tournament_finish(rank, player_count)` 在锦标赛结束时由逻辑层调用；`total_hands / pots_won / chip_peak` 每手结束时增量更新并落盘。
 
-### 3.12 AI（core/ai/ 三件）
+### 3.12 AI（core/ai/ 四件）
 
-- **AIProfiles**：4 组风格参数 `PROFILES`（`looseness / aggression / bluff_frequency`，数值见 GDD 4.1）；`IDENTITIES` 8 个固定身份（石头/疯子/老枪/秤砣/狐狸/鲨鱼/木头/浪人，各配 `avatar_*` id）；`IDENTITY_PREFERRED_PROFILE` 习惯配对；`get_profile(id)`。
+- **AIProfiles**：8 个固定身份（石头/疯子/老枪/秤砣/狐狸/鲨鱼/木头/浪人，各配 `avatar_*` id），`PROFILES` 以身份名为键，每个身份一张 10 参数表——**静态风格 6 项**（`tightness` 紧度 / `aggression` 激进度 / `calling_tendency` 跟注倾向 / `bluff_frequency` 诈唬频率 / `risk_tolerance` 风险承受 / `position_awareness` 位置意识）+ **情绪规则 4 项**（`tilt_sensitivity` / `tilt_recovery` / `tilt_looseness_dir` / `tilt_bluff_dir`，数值见文件内注释）；`get_profile(id)` 缺省回落 `DEFAULT_PROFILE = "鲨鱼"`。`PlayerState.ai_profile` 直接存身份名。
+- **AIMemory**：AI 情绪状态，每 AI 一份、跨手存活，由 TournamentManager 持有（`ai_memories: {seat: AIMemory}`）。唯一动态量 `tilt_level`（0~1）：每手结束按本手盈亏更新——先按 `tilt_recovery × 0.3` 自然衰减，损失 ≥ min(20% 本手前筹码, 15BB) 时按 `sensitivity × 损失比例` 上涨。**只在手牌边界更新**（与存档点一致），决策期间只读；随锦标赛存档序列化（`ai_memory` 字段）。
 - **HandStrength**（全静态）：`score(hole, community) -> float(0~1)` 按公共牌数量分流。翻牌前：启发式公式（对子 0.50~1.0；非对子按双高牌 + 同花/连张加成 − 断层扣分），覆盖全部 169 种起手归类，不用字面查表。翻牌后：成牌基础分（牌型映射 + 踢脚微调）+ 听牌出路 × 0.02（同花听 9、两头顺 8、卡顺 4，粗算不减重复牌）。
-- **AIDecider**：`var rng` 按手牌种子播种（`_init(rng_seed := 0)`）。`decide(ctx) -> {type, amount}`：评分 → 风格调制（入局线 `0.55 − looseness×0.35`）→ 分档选动作（短筹码 < `SHORT_STACK_BB=8.0` 倍大盲触发全下倾向；强牌按激进度加注；跟注站弱牌爱跟便宜注，贵注线 `EXPENSIVE_CALL_RATIO=0.25`；加注金额 ½~1 池随机受激进度缩放）→ **`_clamp` 终点钳制**，返回值永远在 `legal_actions` 允许集合内。
+- **AIDecider**：`var rng` 按手牌种子播种（`_init(rng_seed := 0)`）。`decide(ctx) -> {type, amount}`：评分 → 风格+情绪调制（**有效参数 = 静态参数 + tilt_level × tilt_*_dir**，tilt=0 时完全退化为静态参数；入局线 `0.55 − 有效松度×0.35`，再按 `position_awareness` 随位置系数偏移、多人底池每多一对手 +0.03）→ 分档选动作（短筹码 < `4 + risk×8` 倍大盲触发全下倾向；强牌 ≥ 0.78 按激进度加注；弱牌面对便宜注按 `calling_tendency` 跟注，便宜线 `0.1 + risk×0.3` 倍剩余筹码；加注金额 ½~1 池随机受激进度缩放）→ **`_clamp` 终点钳制**，返回值永远在 `legal_actions` 允许集合内。
 
 ---
 
@@ -267,15 +268,16 @@ func pot_size() -> int               # 全部 hand_total_bet 之和
 
 均在 `user://save/` 下。
 
-### 6.1 锦标赛存档 tournament.save（JSON，SAVE_VERSION=1）
+### 6.1 锦标赛存档 tournament.save（JSON，SAVE_VERSION=2）
 
 **只在手牌边界写**（每手结束与开局时 `_autosave`；锦标赛结束清除）。字段：
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "config": {"starting_chips": 1000, "blind_levels": [[10,20],...], "hands_per_level": 10},
   "players": [{"seat_index","name","avatar_id","is_human","ai_profile","chips","status"}...],
+  "ai_memory": {"1": {"tilt_level": 0.0, "last_big_loss": 0}, ...},
   "button_seat": 0, "blind_level": 0, "hands_played": 0, "hand_count_total": 0,
   "eliminated": [seat_index...],
   "rng_state": "12345678901234567890"
@@ -283,6 +285,7 @@ func pot_size() -> int               # 全部 hand_total_bet 之和
 ```
 
 - 手牌边界处存活者 status 必为 ACTIVE，淘汰者为 OUT，故不存手牌内状态（hole_cards/current_bet 等）。
+- `ai_memory`：AI 情绪状态（v2 新增，键为座位号字符串）。AI 的 tilt 只在手牌边界更新，存档点天然包含完整情绪状态。
 - **`rng_state` 存字符串**：`_rng.state` 是 64 位整数，超出 JSON 数字精度；恢复时 `str(d.rng_state).to_int()` 写回。每手牌堆种子由该 RNG 即时产生，保存状态等价于保存"下一手种子"，恢复后牌序与 AI 决策序列均可复现。
 - 版本不匹配 `from_dict` 返回 false（`load_save()` 视同无存档）。
 
@@ -385,6 +388,8 @@ res://assets/cards/card_<花色>_<点数>.png
 ### 9.2 头像（core/ai/ai_profiles.gd → ui/seat_ui.gd）
 
 `avatar_id` → `res://assets/avatars/<avatar_id>.png`（128×128 卡通人物头像，DiceBear adventurer 风格，CC-BY 4.0，背景色沿用原身份配色）。对应关系：`avatar_human`=你；`avatar_rock`=石头、`avatar_maniac`=疯子、`avatar_veteran`=老枪、`avatar_anchor`=秤砣、`avatar_fox`=狐狸、`avatar_shark`=鲨鱼、`avatar_block`=木头、`avatar_drifter`=浪人。
+
+**tilt 情绪气泡**（`SeatUI.set_tilt(level, dir)`，由 `TableScene.on_hand_end` 每手边界从 `tm.ai_memories` 只读刷新）：浮在头像框左上方的圆角气泡（overlay Control 承载，不参与座位布局），emoji 由 `SystemFont`（Segoe UI Emoji / Apple Color Emoji / Noto Color Emoji）渲染；`level < 0.25` 隐藏，`≥ 0.6` 换强烈表情；`dir > 0` 愤怒系（😡/🤬）、`dir ≤ 0` 慌乱系（😟/😱）；OUT 与无 memory 座位恒隐藏。
 
 ### 9.3 筹码（ui/table_scene.gd `_chip_texture`）
 

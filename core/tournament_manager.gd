@@ -2,7 +2,7 @@ class_name TournamentManager extends RefCounted
 ## 锦标赛调度（TECH_DESIGN 4.7）：驱动 HandController 逐手进行，
 ## 处理淘汰/按钮移动/盲注升级/自动存档，产生 TOURNAMENT_WIN/LOSE。
 
-const SAVE_VERSION := 1
+const SAVE_VERSION := 2
 
 ## 锦标赛配置（GDD 3.2）。
 class TournamentConfig extends RefCounted:
@@ -49,9 +49,11 @@ var finished: bool = false
 var hand: HandController
 var save_manager: SaveManager
 var stats_manager: StatsManager
+var ai_memories: Dictionary = {}  # seat -> AIMemory（AI 情绪状态，跨手存活，随存档序列化）
 
 var _rng := RandomNumberGenerator.new()
 var _events: Array[Dictionary] = []
+var _chips_before_hand: Dictionary = {}  # seat -> 本手开始前筹码（AI 盈亏/tilt 更新用）
 
 
 func _init(p_save_manager: SaveManager = null, p_stats_manager: StatsManager = null) -> void:
@@ -70,6 +72,8 @@ func start_new(p_config: TournamentConfig, ai_count: int, rng_seed: int = 0) -> 
 
 	players.clear()
 	eliminated.clear()
+	ai_memories.clear()
+	_chips_before_hand.clear()
 	blind_level = 0
 	hands_played = 0
 	hand_count_total = 0
@@ -83,7 +87,7 @@ func start_new(p_config: TournamentConfig, ai_count: int, rng_seed: int = 0) -> 
 	human.chips = config.starting_chips
 	players.append(human)
 
-	# 身份随机洗牌，风格按身份习惯配对（AIProfiles.IDENTITY_PREFERRED_PROFILE），尽量避免重复
+	# 身份随机洗牌（不重复）；ai_profile 即身份名，行为参数见 AIProfiles.PROFILES
 	var identities: Array = AIProfiles.IDENTITIES.duplicate()
 	_shuffle(identities)
 	for i in ai_count:
@@ -91,9 +95,10 @@ func start_new(p_config: TournamentConfig, ai_count: int, rng_seed: int = 0) -> 
 		ai.seat_index = i + 1
 		ai.name = identities[i].name
 		ai.avatar_id = identities[i].avatar_id
-		ai.ai_profile = AIProfiles.IDENTITY_PREFERRED_PROFILE.get(ai.name, AIProfiles.PROFILE_TAG)
+		ai.ai_profile = ai.name
 		ai.chips = config.starting_chips
 		players.append(ai)
+		ai_memories[ai.seat_index] = AIMemory.new()
 
 	button_seat = _rng.randi_range(0, players.size() - 1)
 	_autosave()
@@ -124,7 +129,11 @@ func run_next_hand() -> void:
 			if p.is_human:
 				rig_seat = p.seat_index
 	hand = HandController.new(in_hand, button_seat, blinds[0], blinds[1],
-			deck_seed, AIDecider.new(deck_seed), hand_count_total, rig_seat)
+			deck_seed, AIDecider.new(deck_seed), hand_count_total, rig_seat, ai_memories)
+	# 本手开始前筹码快照：手牌收尾时计算各 AI 盈亏，驱动 tilt 更新
+	_chips_before_hand.clear()
+	for p in in_hand:
+		_chips_before_hand[p.seat_index] = p.chips
 	hand.start()
 	var hand_events := hand.pop_events()
 	_events.append_array(hand_events)
@@ -171,6 +180,19 @@ func human() -> PlayerState:
 # ---- 手牌收尾 ----
 
 func _after_hand_end(hand_events: Array) -> void:
+	# AI 情绪更新：本手盈亏喂给 memory（输大锅触发 tilt，每手自然衰减）
+	var bb_now: int = config.blinds_at(blind_level)[1]
+	for p in players:
+		if p.is_human:
+			continue
+		var mem: AIMemory = ai_memories.get(p.seat_index)
+		if mem == null:
+			continue
+		var before: int = _chips_before_hand.get(p.seat_index, p.chips)
+		var prof: Dictionary = AIProfiles.get_profile(p.ai_profile)
+		mem.notify_hand_result(p.chips - before, before, bb_now,
+				prof.tilt_sensitivity, prof.tilt_recovery)
+
 	# 记录淘汰：按 HandController ELIMINATED 事件的顺序（同手淘汰者已按名次排好）
 	for e in hand_events:
 		if e.type == Events.Type.ELIMINATED and not eliminated.has(e.seat):
@@ -250,10 +272,14 @@ func to_dict() -> Dictionary:
 			"is_human": p.is_human, "ai_profile": p.ai_profile, "chips": p.chips,
 			"status": p.status,  # 手牌边界：存活者均 ACTIVE，淘汰者 OUT
 		})
+	var memory_dicts := {}
+	for seat in ai_memories:
+		memory_dicts[str(seat)] = ai_memories[seat].to_dict()  # JSON 键须为字符串
 	return {
 		"version": SAVE_VERSION,
 		"config": config.to_dict(),
 		"players": player_dicts,
+		"ai_memory": memory_dicts,
 		"button_seat": button_seat,
 		"blind_level": blind_level,
 		"hands_played": hands_played,
@@ -286,6 +312,12 @@ func from_dict(d: Dictionary) -> bool:
 	hand_count_total = d.hand_count_total
 	eliminated.clear()
 	eliminated.append_array(d.eliminated)
+	ai_memories.clear()
+	for key in d.get("ai_memory", {}):
+		var mem := AIMemory.new()
+		mem.from_dict(d.ai_memory[key])
+		ai_memories[key.to_int()] = mem
+	_chips_before_hand.clear()
 	_rng.state = str(d.rng_state).to_int()
 	finished = false
 	hand = null

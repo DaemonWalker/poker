@@ -346,6 +346,14 @@ func on_hand_end(_event: Dictionary) -> void:
 	for seat in seats:
 		seat.set_highlight(false)
 		seat.set_bet(0)
+		# tilt 情绪气泡：手牌边界从逻辑层 memory 只读展示（OUT 与无 memory 的座位隐藏）
+		var p := tm.players[seat.seat_index]
+		var mem: AIMemory = tm.ai_memories.get(seat.seat_index)
+		if mem == null or p.status == PlayerState.Status.OUT:
+			seat.set_tilt(0.0, 0.0)
+		else:
+			var dir := float(AIProfiles.get_profile(p.ai_profile).tilt_looseness_dir)
+			seat.set_tilt(mem.tilt_level, dir)
 	# 跳过模式只覆盖一手：恢复动画与事件节奏，摘要弹窗在主循环 queue_drained 后弹出
 	if _skip_active:
 		_skip_active = false

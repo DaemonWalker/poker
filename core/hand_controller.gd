@@ -22,6 +22,7 @@ var street: Street = Street.PREFLOP
 var round: BettingRound
 var waiting_seat: int = -1  # >=0：挂起等待该座位（人类）提交动作
 var ai_decider: AIDecider
+var ai_memories: Dictionary = {}  # seat -> AIMemory，由 TournamentManager 持有并共享引用
 
 var _chips_at_start := {}  # seat -> 本手开始时筹码（淘汰名次排序用）
 var _alive_at_start := 0
@@ -29,13 +30,16 @@ var _alive_at_start := 0
 
 ## p_players 为本手参与者（筹码 > 0），调用前请确保按钮/盲注已确定。
 ## p_rig_seat >= 0 时启用简单模式洗牌：重洗至该座位假定摊牌必胜（起手强、公共牌有利）。
+## p_ai_memories 为 AI 情绪状态表（seat -> AIMemory），决策时只读传入 ctx。
 func _init(p_players: Array[PlayerState], p_button_seat: int, p_small_blind: int, p_big_blind: int,
-		p_deck_seed: int, p_ai_decider: AIDecider, p_hand_no: int, p_rig_seat: int = -1) -> void:
+		p_deck_seed: int, p_ai_decider: AIDecider, p_hand_no: int, p_rig_seat: int = -1,
+		p_ai_memories: Dictionary = {}) -> void:
 	players = p_players
 	button_seat = p_button_seat
 	small_blind = p_small_blind
 	big_blind = p_big_blind
 	ai_decider = p_ai_decider
+	ai_memories = p_ai_memories
 	hand_no = p_hand_no
 	deck = Deck.new()
 	deck.shuffle(p_deck_seed)
@@ -142,6 +146,9 @@ func _step() -> void:
 		"big_blind": big_blind,
 		"chips": actor.chips,
 		"profile": actor.ai_profile,
+		"position": _position_factor(actor.seat_index),
+		"active_opponents": _not_folded_count() - 1,
+		"memory": ai_memories.get(actor.seat_index),
 	})
 	var chips_before := actor.chips
 	if not round.apply_action(actor, action):
@@ -358,6 +365,20 @@ func _elimination_check() -> void:
 
 
 # ---- 座位工具 ----
+
+## 位置系数 -1（按钮后第一位，最差）~ +1（按钮位，最好）。
+## 按本手参与者从按钮顺时针的步数归一，供 AI 位置意识调制入局阈值。
+func _position_factor(seat: int) -> float:
+	var n := players.size()
+	if n <= 1:
+		return 0.0
+	var k := 0
+	var s := button_seat
+	while s != seat:
+		s = _next_seat_after(s)
+		k += 1
+	return 1.0 - 2.0 * float(k) / float(n - 1)
+
 
 func _not_folded_count() -> int:
 	var n := 0
