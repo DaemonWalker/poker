@@ -21,6 +21,9 @@ godot --headless --path . -- --auto
 # 批量模拟：筹码守恒逐手校验，改下注/结算逻辑后建议跑
 godot --headless --path . --script tests/simulate.gd -- 100 1
 
+# 座位布局校验：实测 SeatUI 尺寸 + 2~9 人桌矩形相交检测，改座位尺寸/椭圆参数后必跑
+godot --headless --path . --script tools/check_layout.gd
+
 # 窗口模式人工试玩（视觉/交互类改动只能靠这个验收）
 godot --path .
 ```

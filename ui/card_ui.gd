@@ -15,13 +15,16 @@ const SUIT_NAMES := ["spades", "hearts", "clubs", "diamonds"]
 
 static var _tex_cache: Dictionary = {}
 
+## 实例尺寸（座位区小牌用更小的尺寸，须在 add_child 触发 _ready 前设置）。
+var card_size := SIZE
+
 var _label: Label
 var _texture: TextureRect
 
 
 func _ready() -> void:
-	custom_minimum_size = SIZE
-	pivot_offset = SIZE / 2  # 翻面动画绕中心缩放
+	custom_minimum_size = card_size
+	pivot_offset = card_size / 2  # 翻面动画绕中心缩放
 	_texture = TextureRect.new()
 	_texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_texture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED

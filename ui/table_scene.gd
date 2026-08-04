@@ -5,8 +5,9 @@ class_name TableScene extends Node2D
 const AI_COUNT := 5
 const SEAT_OFFSET := Vector2(-85, -65)
 ## 座位布局椭圆：N 个座位沿椭圆等角均匀分布，0 号（人类）固定在正下方。
-const SEAT_CENTER := Vector2(640, 307)
-const SEAT_RADIUS := Vector2(463, 193)
+## 半径按 SeatUI.WIDTH/HEIGHT 与 9 人满桌调过：左右两侧座位纵向间距 ≥ 面板高度，底座位下沿不压操作面板。
+const SEAT_CENTER := Vector2(640, 324)
+const SEAT_RADIUS := Vector2(500, 205)
 const COMMUNITY_OFFSET := Vector2(-28, -40)
 ## 全局动画速度系数（标准 1.0 / 快速 0.5），所有 tween 时长乘此系数；
 ## _ready 时从设置读取（GameSettings.anim_speed）。
@@ -180,7 +181,8 @@ func on_deal_hole(event: Dictionary) -> void:
 		for i in 2:
 			var fly := _spawn_fly_card(_deck_slot.position)
 			AudioManager.play(&"deal_card")
-			var target := seat.position + Vector2(16 + 62 * i, 46)
+			# 落点对齐座位内小牌槽位（牌 46×66，飞行牌 56×80，按中心对齐偏移）
+			var target := seat.position + Vector2(31 + 52 * i, 47)
 			var t := create_tween()
 			t.tween_property(fly, "position", target, 0.15 * ANIM_SPEED)
 			await t.finished

@@ -3,6 +3,10 @@ class_name SeatUI extends PanelContainer
 ## RPG 预留：头像框描边可承载职业/稀有度色；_skill_row 为技能图标槽位（默认隐藏）。
 
 const WIDTH := 170.0
+## 座位高度（头像行 + 底牌行 + 边距），table_scene 椭圆布局按此值保证座位不重叠。
+const HEIGHT := 126.0
+## 座位底牌比公共牌小一号（46×66），9 人桌才能放下。
+const CARD_SIZE := Vector2(46, 66)
 
 const COLOR_BORDER := Color(0.30, 0.33, 0.37)
 const COLOR_HIGHLIGHT := Color(0.95, 0.78, 0.30)
@@ -10,6 +14,32 @@ const COLOR_HIGHLIGHT := Color(0.95, 0.78, 0.30)
 ## tilt 气泡：低于该值隐藏，达到 SEVERE 换更强烈的表情
 const TILT_SHOW := 0.25
 const TILT_SEVERE := 0.6
+
+## 头像圆角裁剪材质（全座位共享）：Godot 无原生圆角 clip_contents，
+## 用 shader 把方形头像裁成与头像框一致的圆角矩形。
+static var _rounded_avatar_mat: ShaderMaterial
+
+
+## 头像圆角裁剪：半径与头像框圆角一致（10px），边缘约 1px 抗锯齿。
+static func _rounded_avatar_material() -> ShaderMaterial:
+	if _rounded_avatar_mat == null:
+		var shader := Shader.new()
+		shader.code = """
+shader_type canvas_item;
+uniform vec2 rect_size = vec2(44.0, 44.0);
+uniform float corner_radius = 10.0;
+
+void fragment() {
+	vec4 col = texture(TEXTURE, UV);
+	vec2 d = abs(UV * rect_size - rect_size * 0.5) - (rect_size * 0.5 - corner_radius);
+	float dist = length(max(d, vec2(0.0))) - corner_radius;
+	col.a *= 1.0 - smoothstep(-0.75, 0.75, dist);
+	COLOR = col;
+}
+"""
+		_rounded_avatar_mat = ShaderMaterial.new()
+		_rounded_avatar_mat.shader = shader
+	return _rounded_avatar_mat
 
 var seat_index: int = -1
 
@@ -52,14 +82,14 @@ func _ready() -> void:
 	top.add_theme_constant_override("separation", 8)
 	root.add_child(top)
 
-	# 头像框（RPG 预留：描边色未来可表达职业/稀有度，当前统一中性描边）
+	# 头像框：头像铺满整个框（无边距），方角由 _avatar 的圆角 shader 裁掉
 	_avatar_frame = PanelContainer.new()
-	_avatar_frame.custom_minimum_size = Vector2(56, 56)
+	_avatar_frame.custom_minimum_size = Vector2(44, 44)
+	_avatar_frame.clip_contents = true
 	var af_style := StyleBoxFlat.new()
 	af_style.bg_color = Color(0.07, 0.08, 0.10)
 	af_style.set_corner_radius_all(10)
-	af_style.set_border_width_all(2)
-	af_style.border_color = Color(0.40, 0.43, 0.47)
+	af_style.set_content_margin_all(0)
 	_avatar_frame.add_theme_stylebox_override("panel", af_style)
 	_avatar_frame.visible = false
 	top.add_child(_avatar_frame)
@@ -68,6 +98,7 @@ func _ready() -> void:
 	_avatar = TextureRect.new()
 	_avatar.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_avatar.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_avatar.material = _rounded_avatar_material()
 	_avatar_frame.add_child(_avatar)
 
 	# 信息列：名字行（D 徽章 + 名字 + 状态 + 思考中）+ 筹码行（筹码 + 本轮下注）
@@ -164,6 +195,7 @@ func _ready() -> void:
 	root.add_child(card_row)
 	for i in 2:
 		var c := CardUI.new()
+		c.card_size = CARD_SIZE
 		card_row.add_child(c)
 		_cards.append(c)
 	hide_cards()
