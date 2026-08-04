@@ -25,7 +25,7 @@ godot --path .
 # 无头自动演示（AI 代打完整场后自动退出，冒烟回归用）
 godot --headless --path . -- --auto
 
-# 逻辑层单元测试（429 项断言）
+# 逻辑层单元测试（713 项断言）
 godot --headless --path . --script tests/run_tests.gd
 
 # 全 AI 批量锦标赛模拟（筹码守恒校验，默认 100 场）
@@ -52,6 +52,7 @@ docs/       文档（见下）
 |---|---|
 | `docs/GDD.md` | 游戏规则：玩法、锦标赛规则、AI 设计、界面操作、动画音效清单、存档战绩 |
 | `docs/TECH_DESIGN.md` | 技术文档：架构、模块职责、事件清单、持久化格式、测试命令、关键实现决策、素材映射 |
+| `docs/AI_PHASE2.md` | AI 第二期（对手建模/学习能力）实施指南，供新对话开工 |
 | `AGENTS.md` | 给 AI 助手的快速上手指南：命令、约定、陷阱 |
 | `assets/SOURCES.md` / `assets/audio/SOURCES.md` | 素材来源与许可证 |
 

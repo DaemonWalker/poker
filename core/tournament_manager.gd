@@ -2,7 +2,7 @@ class_name TournamentManager extends RefCounted
 ## 锦标赛调度（TECH_DESIGN 4.7）：驱动 HandController 逐手进行，
 ## 处理淘汰/按钮移动/盲注升级/自动存档，产生 TOURNAMENT_WIN/LOSE。
 
-const SAVE_VERSION := 2
+const SAVE_VERSION := 3
 
 ## 锦标赛配置（GDD 3.2）。
 class TournamentConfig extends RefCounted:
@@ -54,6 +54,7 @@ var ai_memories: Dictionary = {}  # seat -> AIMemory（AI 情绪状态，跨手�
 var _rng := RandomNumberGenerator.new()
 var _events: Array[Dictionary] = []
 var _chips_before_hand: Dictionary = {}  # seat -> 本手开始前筹码（AI 盈亏/tilt 更新用）
+var _hand_events_full: Array[Dictionary] = []  # 本手完整事件流（跨多次 pop 累积，对手建模统计用）
 
 
 func _init(p_save_manager: SaveManager = null, p_stats_manager: StatsManager = null) -> void:
@@ -134,11 +135,13 @@ func run_next_hand() -> void:
 	_chips_before_hand.clear()
 	for p in in_hand:
 		_chips_before_hand[p.seat_index] = p.chips
+	_hand_events_full.clear()
 	hand.start()
 	var hand_events := hand.pop_events()
 	_events.append_array(hand_events)
+	_hand_events_full.append_array(hand_events)
 	if hand.is_finished():
-		_after_hand_end(hand_events)
+		_after_hand_end(_hand_events_full)
 
 
 func is_waiting_for_human() -> bool:
@@ -153,8 +156,9 @@ func submit_human_action(action: Dictionary) -> bool:
 		return false
 	var hand_events := hand.pop_events()
 	_events.append_array(hand_events)
+	_hand_events_full.append_array(hand_events)
 	if hand.is_finished():
-		_after_hand_end(hand_events)
+		_after_hand_end(_hand_events_full)
 	return true
 
 
@@ -179,9 +183,13 @@ func human() -> PlayerState:
 
 # ---- 手牌收尾 ----
 
+## hand_events 为本手完整事件流（HAND_START ~ HAND_END，跨多次 pop 累积，
+## 对手建模统计依赖完整流；POT_AWARD/ELIMINATED 只在收尾批次出现，无重复计数）。
 func _after_hand_end(hand_events: Array) -> void:
-	# AI 情绪更新：本手盈亏喂给 memory（输大锅触发 tilt，每手自然衰减）
+	# AI 情绪 + 对手建模更新：本手盈亏与人类行为增量喂给 memory
+	#（输大锅触发 tilt，每手自然衰减；对手统计只针对人类座位）
 	var bb_now: int = config.blinds_at(blind_level)[1]
+	var opp_inc := OpponentTracker.parse_hand(hand_events, human().seat_index)
 	for p in players:
 		if p.is_human:
 			continue
@@ -192,6 +200,7 @@ func _after_hand_end(hand_events: Array) -> void:
 		var prof: Dictionary = AIProfiles.get_profile(p.ai_profile)
 		mem.notify_hand_result(p.chips - before, before, bb_now,
 				prof.tilt_sensitivity, prof.tilt_recovery)
+		mem.notify_opponent_hand(opp_inc)
 
 	# 记录淘汰：按 HandController ELIMINATED 事件的顺序（同手淘汰者已按名次排好）
 	for e in hand_events:

@@ -172,18 +172,19 @@ func pot_size() -> int               # 全部 hand_total_bet 之和
 
 ### 3.10 SaveManager（core/save_manager.gd）
 
-`user://save/tournament.save`，JSON（tab 缩进，人可读）。`has_save() / load()（损坏返回 {}）/ save(data) / clear()`。路径可注入（测试/模拟用临时路径）。版本校验由 `TournamentManager.from_dict` 负责（`SAVE_VERSION = 2`）。
+`user://save/tournament.save`，JSON（tab 缩进，人可读）。`has_save() / load()（损坏返回 {}）/ save(data) / clear()`。路径可注入（测试/模拟用临时路径）。版本校验由 `TournamentManager.from_dict` 负责（`SAVE_VERSION = 3`）。
 
 ### 3.11 StatsManager（core/stats_manager.gd）
 
 `user://save/stats.save`，JSON `{version, stats}`（`STATS_VERSION = 1`）。`data: StatsData` 字段：`games_played / wins / top3 / total_hands / pots_won / chip_peak / rank_distribution[9]`。构造时自动 load。`record_tournament_finish(rank, player_count)` 在锦标赛结束时由逻辑层调用；`total_hands / pots_won / chip_peak` 每手结束时增量更新并落盘。
 
-### 3.12 AI（core/ai/ 四件）
+### 3.12 AI（core/ai/ 五件）
 
-- **AIProfiles**：8 个固定身份（石头/疯子/老枪/秤砣/狐狸/鲨鱼/木头/浪人，各配 `avatar_*` id），`PROFILES` 以身份名为键，每个身份一张 10 参数表——**静态风格 6 项**（`tightness` 紧度 / `aggression` 激进度 / `calling_tendency` 跟注倾向 / `bluff_frequency` 诈唬频率 / `risk_tolerance` 风险承受 / `position_awareness` 位置意识）+ **情绪规则 4 项**（`tilt_sensitivity` / `tilt_recovery` / `tilt_looseness_dir` / `tilt_bluff_dir`，数值见文件内注释）；`get_profile(id)` 缺省回落 `DEFAULT_PROFILE = "鲨鱼"`。`PlayerState.ai_profile` 直接存身份名。
-- **AIMemory**：AI 情绪状态，每 AI 一份、跨手存活，由 TournamentManager 持有（`ai_memories: {seat: AIMemory}`）。唯一动态量 `tilt_level`（0~1）：每手结束按本手盈亏更新——先按 `tilt_recovery × 0.3` 自然衰减，损失 ≥ min(20% 本手前筹码, 15BB) 时按 `sensitivity × 损失比例` 上涨。**只在手牌边界更新**（与存档点一致），决策期间只读；随锦标赛存档序列化（`ai_memory` 字段）。
+- **AIProfiles**：8 个固定身份（石头/疯子/老枪/秤砣/狐狸/鲨鱼/木头/浪人，各配 `avatar_*` id），`PROFILES` 以身份名为键，每个身份一张 11 参数表——**静态风格 6 项**（`tightness` 紧度 / `aggression` 激进度 / `calling_tendency` 跟注倾向 / `bluff_frequency` 诈唬频率 / `risk_tolerance` 风险承受 / `position_awareness` 位置意识）+ **情绪规则 4 项**（`tilt_sensitivity` / `tilt_recovery` / `tilt_looseness_dir` / `tilt_bluff_dir`，数值见文件内注释）+ **对手建模 1 项**（`adaptability` 对手调制幅度 0~1，0 = 不学习；老枪 .90 / 鲨鱼 .85 / 狐狸 .80 / 浪人 .50 / 石头 .40 / 秤砣 .30 / 疯子 .20 / 木头 .10）；`get_profile(id)` 缺省回落 `DEFAULT_PROFILE = "鲨鱼"`。`PlayerState.ai_profile` 直接存身份名。
+- **AIMemory**：AI 跨手状态，每 AI 一份、跨手存活，由 TournamentManager 持有（`ai_memories: {seat: AIMemory}`）。**情绪**：动态量 `tilt_level`（0~1）：每手结束按本手盈亏更新——先按 `tilt_recovery × 0.3` 自然衰减，损失 ≥ min(20% 本手前筹码, 15BB) 时按 `sensitivity × 损失比例` 上涨。**对手建模**（二期）：`opponent_stats` 统计人类玩家行为——`vpip`（翻牌前主动入池率）/ `pfr`（翻牌前加注率）/ `aggression`（翻牌后攻击性 raise/(raise+call)）/ `showdown_strength`（摊牌平均牌力），全部 EWMA 指数衰减平均（α=0.15），初值取理论基准（0.3/0.15/0.4/0.5），另计 `hands_seen` 观察手数。**只在手牌边界更新**（与存档点一致），决策期间只读；随锦标赛存档序列化（`ai_memory` 字段）。
+- **OpponentTracker**（全静态，二期新增）：`parse_hand(events, seat) -> Dictionary` 从**整手事件流**解析指定座位的行为增量 `{hands, vpip(bool), pfr(bool), aggression(float|null), showdown(float|null)}`，null 表示本手无样本不参与 EWMA。不改 HandController；翻牌前/后按 DEAL_FLOP/TURN/RIVER 事件划 street，摊牌牌力用事件流累积的公共牌走 `HandStrength.score`。注意盲注静默扣除无 PLAYER_ACTION 事件：BB 白看牌不算入局，SB 补盲（CALL）算入局。**TournamentManager 须跨多次 pop 累积整手事件流**（`_hand_events_full`）再喂给它——人类参与的手牌分多批 pop，单批事件不含 HAND_START 与翻牌前动作。
 - **HandStrength**（全静态）：`score(hole, community) -> float(0~1)` 按公共牌数量分流。翻牌前：启发式公式（对子 0.50~1.0；非对子按双高牌 + 同花/连张加成 − 断层扣分），覆盖全部 169 种起手归类，不用字面查表。翻牌后：成牌基础分（牌型映射 + 踢脚微调）+ 听牌出路 × 0.02（同花听 9、两头顺 8、卡顺 4，粗算不减重复牌）。
-- **AIDecider**：`var rng` 按手牌种子播种（`_init(rng_seed := 0)`）。`decide(ctx) -> {type, amount}`：评分 → 风格+情绪调制（**有效参数 = 静态参数 + tilt_level × tilt_*_dir**，tilt=0 时完全退化为静态参数；入局线 `0.55 − 有效松度×0.35`，再按 `position_awareness` 随位置系数偏移、多人底池每多一对手 +0.03）→ 分档选动作（短筹码 < `4 + risk×8` 倍大盲触发全下倾向；强牌 ≥ 0.78 按激进度加注；弱牌面对便宜注按 `calling_tendency` 跟注，便宜线 `0.1 + risk×0.3` 倍剩余筹码；加注金额 ½~1 池随机受激进度缩放）→ **`_clamp` 终点钳制**，返回值永远在 `legal_actions` 允许集合内。
+- **AIDecider**：`var rng` 按手牌种子播种（`_init(rng_seed := 0)`）。`decide(ctx) -> {type, amount}`：评分 → 风格+情绪+对手调制（**有效参数 = 静态参数 + tilt_level × tilt_*_dir + adaptability × 对手偏移 × 样本完成度**，tilt=0 且 adaptability=0/无样本时逐比特退化为静态参数；入局线 `0.55 − 有效松度×0.35`，再按 `position_awareness` 随位置系数偏移、多人底池每多一对手 +0.03）→ 分档选动作（短筹码 < `4 + risk×8` 倍大盲触发全下倾向；强牌 ≥ 0.78 按激进度加注；弱牌面对便宜注按 `calling_tendency` 跟注，便宜线 `0.1 + risk×0.3` 倍剩余筹码；加注金额 ½~1 池随机受激进度缩放）→ **`_clamp` 终点钳制**，返回值永远在 `legal_actions` 允许集合内。**对手调制**（叠在 tilt 之后）：对手松（vpip 偏离基准 +0.3 以上）→ 松度下调（收紧等他撞）且诈唬下调；对手紧 → 诈唬上调；对手被动（aggression 低于基准）→ 加注倾向上调；对手摊牌偏弱 → 跟注倾向上调。偏移量 = `adaptability × 偏离基准程度 × 系数 × min(hands_seen/10, 1)`，统计与调制全部确定性、不消耗 rng。
 
 ---
 
@@ -268,16 +269,18 @@ func pot_size() -> int               # 全部 hand_total_bet 之和
 
 均在 `user://save/` 下。
 
-### 6.1 锦标赛存档 tournament.save（JSON，SAVE_VERSION=2）
+### 6.1 锦标赛存档 tournament.save（JSON，SAVE_VERSION=3）
 
 **只在手牌边界写**（每手结束与开局时 `_autosave`；锦标赛结束清除）。字段：
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "config": {"starting_chips": 1000, "blind_levels": [[10,20],...], "hands_per_level": 10},
   "players": [{"seat_index","name","avatar_id","is_human","ai_profile","chips","status"}...],
-  "ai_memory": {"1": {"tilt_level": 0.0, "last_big_loss": 0}, ...},
+  "ai_memory": {"1": {"tilt_level": 0.0, "last_big_loss": 0,
+      "opponent_stats": {"hands_seen": 0, "vpip": 0.3, "pfr": 0.15,
+          "aggression": 0.4, "showdown_strength": 0.5}}, ...},
   "button_seat": 0, "blind_level": 0, "hands_played": 0, "hand_count_total": 0,
   "eliminated": [seat_index...],
   "rng_state": "12345678901234567890"
@@ -285,9 +288,9 @@ func pot_size() -> int               # 全部 hand_total_bet 之和
 ```
 
 - 手牌边界处存活者 status 必为 ACTIVE，淘汰者为 OUT，故不存手牌内状态（hole_cards/current_bet 等）。
-- `ai_memory`：AI 情绪状态（v2 新增，键为座位号字符串）。AI 的 tilt 只在手牌边界更新，存档点天然包含完整情绪状态。
+- `ai_memory`：AI 跨手状态（v2 新增 tilt 情绪、v3 新增 `opponent_stats` 对手建模统计，键为座位号字符串）。两者都只在手牌边界更新，存档点天然包含完整状态。
 - **`rng_state` 存字符串**：`_rng.state` 是 64 位整数，超出 JSON 数字精度；恢复时 `str(d.rng_state).to_int()` 写回。每手牌堆种子由该 RNG 即时产生，保存状态等价于保存"下一手种子"，恢复后牌序与 AI 决策序列均可复现。
-- 版本不匹配 `from_dict` 返回 false（`load_save()` 视同无存档）。
+- 版本不匹配 `from_dict` 返回 false（`load_save()` 视同无存档），旧档拒收走新开局，不做迁移。
 
 ### 6.2 战绩 stats.save（JSON，STATS_VERSION=1）
 
