@@ -51,7 +51,7 @@ godot --path .
 - `--script` 的 SceneTree 测试脚本用不了自动加载单例标识符（编译期找不到 AudioManager），且 `_init` 里 add_child 不触发 `_ready`。
 - 无头模式下场景脚本 parse 失败引擎不会自行退出，会挂到超时——看输出里的 ERROR 判断。
 - BettingRound 测试的 3 条 `push_error` 是"非法动作被拒绝"用例的预期输出，不是失败。
-- 整手牌同步跑完后事件才逐条回放：UI 处理事件时读 `PlayerState` 实时状态拿到的已是手牌终局值（淘汰者已是 OUT）。状态类显示必须用事件快照（`HAND_START.alive_seats`、`DEAL_HOLE/PLAYER_ACTION.status`，经 `SeatUI.set_status`），参见 TECH_DESIGN 设计决策 18。
+- 整手牌同步跑完后事件才逐条回放：UI 处理事件时读 `PlayerState` 实时状态拿到的已是手牌终局值（淘汰者已是 OUT），读实时 `pot_size()`/`chips`/`current_bet` 更会提前泄露后续 AI 动作结果。状态、筹码、下注、底池显示都必须用事件快照（`HAND_START.alive_seats/start_chips`、`DEAL_HOLE.chips/bet`、`PLAYER_ACTION.status/bet/chips_left`、`ROUND_END.pot`、`POT_AWARD.chips`），参见 TECH_DESIGN 设计决策 18。
 
 ## 不可破坏的既有行为
 

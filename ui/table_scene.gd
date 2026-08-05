@@ -53,6 +53,9 @@ signal skip_popup_confirmed
 ## 当前街（_set_street 维护）与本手已发公共牌，供跳过摘要分节/摊牌段使用。
 var _street: int = HandController.Street.PREFLOP
 var _community_dealt: Array[Card] = []
+## 本手小盲/大盲座位（HAND_START 快照）：DEAL_HOLE 时把盲注标注为"小盲/大盲"。
+var _sb_seat := -1
+var _bb_seat := -1
 
 const SUIT_SYMBOLS := ["♠", "♥", "♣", "♦"]
 
@@ -158,11 +161,17 @@ func on_hand_start(event: Dictionary) -> void:
 	_skip_sections.clear()
 	_community_dealt.clear()
 	_message_label.text = "第 %d 手 · 盲注 %d/%d" % [event.hand_no, event.sb, event.bb]
+	_sb_seat = event.sb_seat
+	_bb_seat = event.bb_seat
 	for c in community_cards:
 		c.clear()
 	for seat in seats:
 		var p := tm.players[seat.seat_index]
 		seat.bind_player(p)
+		# 筹码同样用手牌开始前快照（回放时实时值已含本手后续动作结果）
+		if event.start_chips.has(seat.seat_index):
+			var start_c: int = event.start_chips[seat.seat_index]
+			seat.set_chips(start_c)
 		# 状态须用手牌开始时的快照（事件回放时整手已跑完，本手被淘汰者实时状态已是 OUT）
 		var start_status: int = PlayerState.Status.ACTIVE if event.alive_seats.has(seat.seat_index) \
 				else PlayerState.Status.OUT
@@ -187,10 +196,16 @@ func on_deal_hole(event: Dictionary) -> void:
 			t.tween_property(fly, "position", target, 0.15 * ANIM_SPEED)
 			await t.finished
 			fly.queue_free()
-	# 盲注在发底牌前静默扣除，这里顺带刷新筹码与下注显示；状态用发牌时的快照
-	var p := tm.players[event.seat]
-	seat.set_chips(p.chips)
-	seat.set_bet(p.current_bet)
+	# 盲注在发底牌前静默扣除，这里顺带刷新筹码与下注显示；全部用发牌时的事件快照
+	# （不能读 PlayerState 实时值：回放时后续 AI 动作已跑完，会提前泄露下注额）。
+	# 发牌时的非零下注只能是强制盲注，标注"小盲/大盲"以免误认为 AI 提前亮出决策。
+	seat.set_chips(event.chips)
+	if event.seat == _sb_seat:
+		seat.set_bet(event.bet, "小盲")
+	elif event.seat == _bb_seat:
+		seat.set_bet(event.bet, "大盲")
+	else:
+		seat.set_bet(event.bet)
 	var deal_status: int = event.status
 	seat.set_status(deal_status)
 	if event.cards.is_empty():
@@ -214,7 +229,7 @@ func on_player_action(event: Dictionary) -> void:
 			BettingRound.ActionType.FOLD:
 				AudioManager.play(&"fold")
 	seat.set_chips(event.chips_left)
-	seat.set_bet(p.current_bet)
+	seat.set_bet(event.bet)
 	var action_status: int = event.status
 	seat.set_status(action_status)
 	for s in seats:
@@ -262,7 +277,7 @@ func on_deal_community(event: Dictionary) -> void:
 			_community_dealt.append(event.card)
 			if _skip_active:
 				_skip_section("河牌  " + _card_text(event.card))
-	_refresh_pot()
+	# 底池保持上一 ROUND_END 的快照值（实时 pot_size 已含本街 AI 下注，不能刷新）
 
 
 ## 单张公共牌入场：动画开时翻面，否则直接显示。
@@ -275,7 +290,8 @@ func _flip_community(idx: int, card: Card) -> void:
 
 
 func on_round_end(event: Dictionary) -> void:
-	_refresh_pot()
+	# 底池用事件快照（实时 pot_size 已含下一街 AI 下注，会提前泄露）
+	_pot_label.text = "底池 ¥%d" % event.pot
 	for seat in seats:
 		seat.set_bet(0)
 		seat.set_highlight(false)
@@ -308,7 +324,7 @@ func on_pot_award(event: Dictionary) -> void:
 	if anim_enabled:
 		AudioManager.play(&"pot_win")
 		await _anim_chip_to_seat(seats[event.seat], event.amount)
-	seats[event.seat].set_chips(p.chips)
+	seats[event.seat].set_chips(event.chips)
 	_message_label.text = "%s 赢得 ¥%d（%s）" % [p.name, event.amount, event.hand_name]
 	if _skip_active:
 		_skip_add_line("[color=gold]★ %s 赢得 ¥%d（%s）[/color]" % [p.name, event.amount, event.hand_name])
@@ -585,11 +601,6 @@ func _refresh_top_bar() -> void:
 	_badge_level.text = "级别 %d" % (tm.blind_level + 1)
 	_badge_blinds.text = "盲注 %d/%d" % [blinds[0], blinds[1]]
 	_badge_hands.text = "距升级 %d 手" % remain
-
-
-func _refresh_pot() -> void:
-	if tm.hand != null:
-		_pot_label.text = "底池 ¥%d" % tm.hand.pot_size()
 
 
 func _set_street(street: HandController.Street) -> void:

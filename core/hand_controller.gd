@@ -58,10 +58,21 @@ func start() -> void:
 		_chips_at_start[p.seat_index] = p.chips
 
 	var alive_seats: Array[int] = []
+	var start_chips: Dictionary = {}
 	for p in players:
 		alive_seats.append(p.seat_index)
-	events.append(Events.hand_start(hand_no, button_seat, small_blind, big_blind, alive_seats))
-	_post_blinds()
+		start_chips[p.seat_index] = p.chips
+	# 盲注座位：单挑时按钮位下小盲（_post_blinds 按此座位扣盲注）
+	var sb_seat: int
+	var bb_seat: int
+	if players.size() == 2:
+		sb_seat = button_seat
+		bb_seat = _next_player_after(button_seat).seat_index
+	else:
+		sb_seat = _next_player_after(button_seat).seat_index
+		bb_seat = _next_player_after(sb_seat).seat_index
+	events.append(Events.hand_start(hand_no, button_seat, small_blind, big_blind, alive_seats, start_chips, sb_seat, bb_seat))
+	_post_blinds(sb_seat, bb_seat)
 	_deal_hole()
 	_start_betting_round(Street.PREFLOP)
 	run()
@@ -82,7 +93,7 @@ func submit_human_action(action: Dictionary) -> bool:
 	var chips_before := p.chips
 	if not round.apply_action(p, action):
 		return false  # 保持挂起，由表现层重试
-	events.append(Events.player_action(p.seat_index, action.get("type", -1), _event_amount(p, action, chips_before), p.chips, p.status))
+	events.append(Events.player_action(p.seat_index, action.get("type", -1), _event_amount(p, action, chips_before), p.chips, p.status, p.current_bet))
 	waiting_seat = -1
 	run()
 	return true
@@ -161,22 +172,15 @@ func _step() -> void:
 		else:
 			action = {"type": BettingRound.ActionType.FOLD}
 		round.apply_action(actor, action)
-	events.append(Events.player_action(actor.seat_index, action.get("type", -1), _event_amount(actor, action, chips_before), actor.chips, actor.status))
+	events.append(Events.player_action(actor.seat_index, action.get("type", -1), _event_amount(actor, action, chips_before), actor.chips, actor.status, actor.current_bet))
 
 
 # ---- 盲注与发牌 ----
 
-func _post_blinds() -> void:
-	var sb_p: PlayerState
-	var bb_p: PlayerState
-	if players.size() == 2:
-		sb_p = _by_seat(button_seat)  # 单挑时按钮位下小盲
-		bb_p = _next_player_after(button_seat)
-	else:
-		sb_p = _next_player_after(button_seat)
-		bb_p = _next_player_after(sb_p.seat_index)
-	_post_blind(sb_p, small_blind)
-	_post_blind(bb_p, big_blind)
+## 按 start() 算好的盲注座位扣盲注（单挑时按钮位下小盲，座位计算规则在 start()）。
+func _post_blinds(sb_seat: int, bb_seat: int) -> void:
+	_post_blind(_by_seat(sb_seat), small_blind)
+	_post_blind(_by_seat(bb_seat), big_blind)
 
 
 func _post_blind(p: PlayerState, amount: int) -> void:
@@ -197,7 +201,7 @@ func _deal_hole() -> void:
 			p.hole_cards.append(deck.draw())
 			seat = _next_seat_after(seat)
 	for p in players:
-		events.append(Events.deal_hole(p.seat_index, p.hole_cards.duplicate() if p.is_human else [], p.status))
+		events.append(Events.deal_hole(p.seat_index, p.hole_cards.duplicate() if p.is_human else [], p.status, p.chips, p.current_bet))
 
 
 # ---- 简单模式洗牌 ----
@@ -327,7 +331,7 @@ func _showdown_and_settle() -> void:
 		var hand_name := ""
 		if a.hand_rank != null:
 			hand_name = HandEvaluator.category_name(a.hand_rank.category)
-		events.append(Events.pot_award(a.seat, a.amount, a.pot_index, hand_name))
+		events.append(Events.pot_award(a.seat, a.amount, a.pot_index, hand_name, p.chips))
 	_finish_hand()
 
 
@@ -340,7 +344,7 @@ func _early_win() -> void:
 	assert(winner != null, "提前判胜时无存活玩家")
 	var total := pot_size()
 	winner.chips += total
-	events.append(Events.pot_award(winner.seat_index, total, 0, ""))
+	events.append(Events.pot_award(winner.seat_index, total, 0, "", winner.chips))
 	_finish_hand()
 
 

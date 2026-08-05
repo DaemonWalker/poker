@@ -274,9 +274,10 @@ func set_chips(chips: int) -> void:
 	_chips_label.text = "¥%d" % chips
 
 
-## 本轮下注额；0 清空。
-func set_bet(amount: int) -> void:
-	_bet_label.text = "下注 %d" % amount if amount > 0 else ""
+## 本轮下注额；0 清空。kind 为显示前缀：常规动作用"下注"，
+## 发牌时的强制盲注传"小盲"/"大盲"，避免看起来像玩家提前亮出决策。
+func set_bet(amount: int, kind: String = "下注") -> void:
+	_bet_label.text = "%s %d" % [kind, amount] if amount > 0 else ""
 
 
 func set_dealer(on: bool) -> void:

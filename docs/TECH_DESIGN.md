@@ -192,15 +192,15 @@ func pot_size() -> int               # 全部 hand_total_bet 之和
 
 | 事件 | 字段 | 说明 |
 |---|---|---|
-| HAND_START | hand_no, button_seat, sb, bb, alive_seats | 一手开始；alive_seats = 本手参与者座位快照 |
-| DEAL_HOLE | seat, cards, status | 发底牌；**AI 的 cards 为 []（不公开）**，人类为 2 张；status 为发牌时状态快照 |
+| HAND_START | hand_no, button_seat, sb, bb, alive_seats, start_chips, sb_seat, bb_seat | 一手开始；alive_seats = 本手参与者座位快照；start_chips = {座位: 筹码} 手牌开始前（盲注未扣）快照；sb_seat/bb_seat = 盲注座位（UI 据此把盲注标注为"小盲/大盲"） |
+| DEAL_HOLE | seat, cards, status, chips, bet | 发底牌；**AI 的 cards 为 []（不公开）**，人类为 2 张；status 为发牌时状态快照；chips/bet 为盲注扣除后快照 |
 | ACTION_REQUIRED | seat, legal_actions, deadline_ms | 人类回合，**事件队列在此停住**等待提交 |
-| PLAYER_ACTION | seat, action, amount, chips_left, status | 一次有效行动（**盲注无此事件**，UI 在 DEAL_HOLE 时顺带刷新筹码/下注显示）；status 为动作后状态快照；**amount：加注取目标总额（"加注到"语义），跟注/全下取本动作实际付出筹码（由 HandController 结算，动作字典本身不带金额）** |
+| PLAYER_ACTION | seat, action, amount, chips_left, status, bet | 一次有效行动（**盲注无此事件**，UI 在 DEAL_HOLE 时顺带刷新筹码/下注显示）；status/bet 为动作后状态与本轮下注快照；**amount：加注取目标总额（"加注到"语义），跟注/全下取本动作实际付出筹码（由 HandController 结算，动作字典本身不带金额）** |
 | DEAL_FLOP | cards(3) | 发翻牌（3 张一并给出） |
 | DEAL_TURN / DEAL_RIVER | card | 转牌 / 河牌 |
 | ROUND_END | pot | 本轮下注收拢后的底池总额 |
 | SHOWDOWN | reveals: [{seat, cards, best, hand_name}] | 摊牌，公开全部未弃牌者；best 为 HandEvaluator.best_five 选出的最佳五张组合 |
-| POT_AWARD | seat, amount, pot_index, hand_name | 收池（提前判胜时 hand_name 为空串） |
+| POT_AWARD | seat, amount, pot_index, hand_name, chips | 收池（提前判胜时 hand_name 为空串）；chips 为本次收池后筹码快照 |
 | ELIMINATED | seat, rank | 淘汰；rank 由 HandController 算好（同手按手始筹码排名） |
 | BLIND_UP | level, sb, bb | 盲注升级 |
 | HAND_END | — | 一手结束（此时已完成自动存档） |
