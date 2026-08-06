@@ -36,7 +36,7 @@ func _init(rng_seed: int = 0) -> void:
 
 ## ctx: {hole_cards, community, legal_actions, pot_size, call_amount, street, big_blind, chips, profile,
 ##       position(可选 -1~1，按钮位为 1), active_opponents(可选), memory(可选 AIMemory，只读)}
-## profile 为身份名；也可直接传参数表 Dictionary（测试注入用，如 adaptability=0 的回归对照）。
+## profile 为参数组键（PARAM_POOL 的 "P01"~"P24"，旧存档兼容身份名）；也可直接传参数表 Dictionary（测试注入用，如 adaptability=0 的回归对照）。
 ## 返回 {type: BettingRound.ActionType, amount: int}
 func decide(ctx: Dictionary) -> Dictionary:
 	var legal: Dictionary = ctx.legal_actions

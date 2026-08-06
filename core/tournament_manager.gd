@@ -62,7 +62,7 @@ func _init(p_save_manager: SaveManager = null, p_stats_manager: StatsManager = n
 	stats_manager = p_stats_manager if p_stats_manager != null else StatsManager.new()
 
 
-## 新开锦标赛：人类坐 0 号位，1~8 个 AI 随机分配身份与风格（尽量不重复）。
+## 新开锦标赛：人类坐 0 号位，1~8 个 AI 随机分配显示身份（不重复）与打法参数（可重复）。
 func start_new(p_config: TournamentConfig, ai_count: int, rng_seed: int = 0) -> void:
 	assert(ai_count >= 1 and ai_count <= 8, "AI 数量须在 1~8")
 	config = p_config
@@ -88,15 +88,17 @@ func start_new(p_config: TournamentConfig, ai_count: int, rng_seed: int = 0) -> 
 	human.chips = config.starting_chips
 	players.append(human)
 
-	# 身份随机洗牌（不重复）；ai_profile 即身份名，行为参数见 AIProfiles.PROFILES
+	# 显示身份随机洗牌（不重复）决定名字与头像；
+	# 打法参数从 PARAM_POOL 带重复独立抽取，ai_profile 存参数组键（行为参数见 AIProfiles）
 	var identities: Array = AIProfiles.IDENTITIES.duplicate()
 	_shuffle(identities)
+	var pool_keys: Array = AIProfiles.PARAM_POOL.keys()
 	for i in ai_count:
 		var ai := PlayerState.new()
 		ai.seat_index = i + 1
 		ai.name = identities[i].name
 		ai.avatar_id = identities[i].avatar_id
-		ai.ai_profile = ai.name
+		ai.ai_profile = pool_keys[_rng.randi_range(0, pool_keys.size() - 1)]
 		ai.chips = config.starting_chips
 		players.append(ai)
 		ai_memories[ai.seat_index] = AIMemory.new()

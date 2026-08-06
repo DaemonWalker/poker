@@ -98,7 +98,7 @@ func test_blind_table_overflow() -> void:
 	expect_eq(cfg.blinds_at(12), [1600, 3200], "第 12 级再翻倍")
 
 
-## 开局结构：人类坐 0 号位，AI 身份不重复，筹码一致
+## 开局结构：人类坐 0 号位，AI 显示身份不重复、打法参数取自参数池（可重复），筹码一致
 func test_start_new_layout() -> void:
 	var tm := _new_tm()
 	tm.start_new(TournamentManager.TournamentConfig.default(), 8, 5)
@@ -111,7 +111,33 @@ func test_start_new_layout() -> void:
 		check(not names.has(p.name), "AI 身份不重复: " + p.name)
 		names[p.name] = true
 		expect_eq(p.chips, 1000, "起始筹码")
-		check(AIProfiles.PROFILES.has(p.ai_profile), "AI 风格合法: " + p.ai_profile)
+		check(AIProfiles.PARAM_POOL.has(p.ai_profile), "打法参数取自参数池: " + p.ai_profile)
+
+
+## 参数池抽取：重复多次开局，所有 profile 均为池内合法键，且池足够大时允许重复出现
+func test_param_pool_draw() -> void:
+	expect_eq(AIProfiles.PARAM_POOL.size(), 24, "参数池 24 组")
+	var seen := {}
+	var has_duplicate := false
+	for s in range(1, 41):  # 40 场 × 8 AI = 320 次抽取，无重复的概率可忽略
+		var tm := _new_tm()
+		tm.start_new(TournamentManager.TournamentConfig.default(), 8, s)
+		for i in range(1, 9):
+			var key: String = tm.players[i].ai_profile
+			check(AIProfiles.PARAM_POOL.has(key), "池内合法键: " + key)
+			var params: Dictionary = AIProfiles.get_profile(key)
+			expect_eq(params.size(), 11, "参数组 11 项字段: " + key)
+			if seen.has(key):
+				has_duplicate = true
+			seen[key] = true
+	check(has_duplicate, "参数组允许重复抽中")
+	# 存档往返后参数组键保留（读档行为不变）
+	var tm2 := _new_tm()
+	tm2.start_new(TournamentManager.TournamentConfig.default(), 3, 7)
+	var key2: String = tm2.players[1].ai_profile
+	var tm3 := _new_tm()
+	check(tm3.load_save(), "读档成功")
+	expect_eq(tm3.players[1].ai_profile, key2, "读档后参数组键不变")
 
 
 func _init() -> void:
