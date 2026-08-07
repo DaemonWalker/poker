@@ -14,6 +14,9 @@ class TournamentConfig extends RefCounted:
 	var hands_per_level: int = 10
 	## 简单模式：洗牌偏向人类（起手更强、公共牌更有利），仅对新建锦标赛生效。
 	var easy_mode: bool = false
+	## 观战模式：全部为 AI（含 0 号位），DEAL_HOLE 公开所有手牌；
+	## 不写锦标赛存档、不计战绩（避免覆盖/污染玩家真实数据）。
+	var spectator: bool = false
 
 	static func default() -> TournamentConfig:
 		return TournamentConfig.new()
@@ -28,13 +31,14 @@ class TournamentConfig extends RefCounted:
 
 	func to_dict() -> Dictionary:
 		return {"starting_chips": starting_chips, "blind_levels": blind_levels,
-				"hands_per_level": hands_per_level, "easy_mode": easy_mode}
+				"hands_per_level": hands_per_level, "easy_mode": easy_mode, "spectator": spectator}
 
 	func from_dict(d: Dictionary) -> void:
 		starting_chips = d.get("starting_chips", starting_chips)
 		blind_levels = d.get("blind_levels", blind_levels)
 		hands_per_level = d.get("hands_per_level", hands_per_level)
 		easy_mode = d.get("easy_mode", easy_mode)
+		spectator = d.get("spectator", spectator)
 
 
 var config: TournamentConfig
@@ -63,8 +67,10 @@ func _init(p_save_manager: SaveManager = null, p_stats_manager: StatsManager = n
 
 
 ## 新开锦标赛：人类坐 0 号位，1~8 个 AI 随机分配显示身份（不重复）与打法参数（可重复）。
+## 观战模式（config.spectator）：0 号位也由 AI 占据，总人数 ai_count+1（2~8 人，
+## 显示身份仅 8 个不重复，故观战总人数上限 8）。
 func start_new(p_config: TournamentConfig, ai_count: int, rng_seed: int = 0) -> void:
-	assert(ai_count >= 1 and ai_count <= 8, "AI 数量须在 1~8")
+	assert(ai_count >= 1 and ai_count <= (7 if p_config.spectator else 8), "AI 数量须在 1~8（观战 1~7）")
 	config = p_config
 	if rng_seed != 0:
 		_rng.seed = rng_seed
@@ -80,22 +86,26 @@ func start_new(p_config: TournamentConfig, ai_count: int, rng_seed: int = 0) -> 
 	hand_count_total = 0
 	finished = false
 
-	var human := PlayerState.new()
-	human.seat_index = 0
-	human.name = "你"
-	human.avatar_id = "avatar_human"
-	human.is_human = true
-	human.chips = config.starting_chips
-	players.append(human)
-
 	# 显示身份随机洗牌（不重复）决定名字与头像；
 	# 打法参数从 PARAM_POOL 带重复独立抽取，ai_profile 存参数组键（行为参数见 AIProfiles）
 	var identities: Array = AIProfiles.IDENTITIES.duplicate()
 	_shuffle(identities)
 	var pool_keys: Array = AIProfiles.PARAM_POOL.keys()
-	for i in ai_count:
+
+	if not config.spectator:
+		var human := PlayerState.new()
+		human.seat_index = 0
+		human.name = "你"
+		human.avatar_id = "avatar_human"
+		human.is_human = true
+		human.chips = config.starting_chips
+		players.append(human)
+
+	var ai_total := ai_count + (1 if config.spectator else 0)
+	var seat_offset := 0 if config.spectator else 1
+	for i in ai_total:
 		var ai := PlayerState.new()
-		ai.seat_index = i + 1
+		ai.seat_index = i + seat_offset
 		ai.name = identities[i].name
 		ai.avatar_id = identities[i].avatar_id
 		ai.ai_profile = pool_keys[_rng.randi_range(0, pool_keys.size() - 1)]
@@ -125,14 +135,14 @@ func run_next_hand() -> void:
 	var blinds: Array = config.blinds_at(blind_level)
 	# AI 决策器按手牌种子播种：同一手牌种子 → 同一决策序列，存档恢复后可复现
 	var deck_seed := _rng.randi()
-	# 简单模式：洗牌偏向人类座位（人类已淘汰则锦标赛已结束，这里必然找得到）
+	# 简单模式：洗牌偏向人类座位（人类已淘汰则锦标赛已结束，这里必然找得到；观战模式无人类）
 	var rig_seat := -1
-	if config.easy_mode:
+	if config.easy_mode and not config.spectator:
 		for p in in_hand:
 			if p.is_human:
 				rig_seat = p.seat_index
 	hand = HandController.new(in_hand, button_seat, blinds[0], blinds[1],
-			deck_seed, AIDecider.new(deck_seed), hand_count_total, rig_seat, ai_memories)
+			deck_seed, AIDecider.new(deck_seed), hand_count_total, rig_seat, ai_memories, config.spectator)
 	# 本手开始前筹码快照：手牌收尾时计算各 AI 盈亏，驱动 tilt 更新
 	_chips_before_hand.clear()
 	for p in in_hand:
@@ -179,7 +189,10 @@ func alive_count() -> int:
 	return n
 
 
+## 人类玩家；观战模式无人类，返回 null，调用方须先判 spectator。
 func human() -> PlayerState:
+	if config != null and config.spectator:
+		return null
 	return players[0]
 
 
@@ -189,9 +202,11 @@ func human() -> PlayerState:
 ## 对手建模统计依赖完整流；POT_AWARD/ELIMINATED 只在收尾批次出现，无重复计数）。
 func _after_hand_end(hand_events: Array) -> void:
 	# AI 情绪 + 对手建模更新：本手盈亏与人类行为增量喂给 memory
-	#（输大锅触发 tilt，每手自然衰减；对手统计只针对人类座位）
+	#（输大锅触发 tilt，每手自然衰减；对手统计只针对人类座位，观战模式无人类跳过）
 	var bb_now: int = config.blinds_at(blind_level)[1]
-	var opp_inc := OpponentTracker.parse_hand(hand_events, human().seat_index)
+	var opp_inc: Dictionary = {}
+	if not config.spectator:
+		opp_inc = OpponentTracker.parse_hand(hand_events, human().seat_index)
 	for p in players:
 		if p.is_human:
 			continue
@@ -202,29 +217,36 @@ func _after_hand_end(hand_events: Array) -> void:
 		var prof: Dictionary = AIProfiles.get_profile(p.ai_profile)
 		mem.notify_hand_result(p.chips - before, before, bb_now,
 				prof.tilt_sensitivity, prof.tilt_recovery)
-		mem.notify_opponent_hand(opp_inc)
+		if not config.spectator:
+			mem.notify_opponent_hand(opp_inc)
 
 	# 记录淘汰：按 HandController ELIMINATED 事件的顺序（同手淘汰者已按名次排好）
 	for e in hand_events:
 		if e.type == Events.Type.ELIMINATED and not eliminated.has(e.seat):
 			eliminated.append(e.seat)
 
-	# 战绩：总手数、人类赢池、筹码峰值
-	stats_manager.data.total_hands += 1
-	for e in hand_events:
-		if e.type == Events.Type.POT_AWARD and e.seat == 0:
-			stats_manager.data.pots_won += 1
-	stats_manager.data.chip_peak = maxi(stats_manager.data.chip_peak, human().chips)
+	# 战绩：总手数、人类赢池、筹码峰值（观战模式不计战绩）
+	if not config.spectator:
+		stats_manager.data.total_hands += 1
+		for e in hand_events:
+			if e.type == Events.Type.POT_AWARD and e.seat == 0:
+				stats_manager.data.pots_won += 1
+		stats_manager.data.chip_peak = maxi(stats_manager.data.chip_peak, human().chips)
 
 	# 胜负判定
-	var h := human()
-	if h.status == PlayerState.Status.OUT:
-		var rank := players.size() - eliminated.find(h.seat_index)
-		_tournament_end(false, rank)
-		return
-	if alive_count() == 1:
-		_tournament_end(true, 1)
-		return
+	if config.spectator:
+		if alive_count() == 1:
+			_tournament_end(true, 1)
+			return
+	else:
+		var h := human()
+		if h.status == PlayerState.Status.OUT:
+			var rank := players.size() - eliminated.find(h.seat_index)
+			_tournament_end(false, rank)
+			return
+		if alive_count() == 1:
+			_tournament_end(true, 1)
+			return
 
 	# 按钮移动到下一个未淘汰座位
 	button_seat = _next_alive_seat_after(button_seat)
@@ -236,8 +258,9 @@ func _after_hand_end(hand_events: Array) -> void:
 		var blinds: Array = config.blinds_at(blind_level)
 		_events.append(Events.blind_up(blind_level, blinds[0], blinds[1]))
 
-	stats_manager.save()
-	_autosave()
+	if not config.spectator:
+		stats_manager.save()
+		_autosave()
 
 
 func _tournament_end(win: bool, rank: int) -> void:
@@ -246,6 +269,8 @@ func _tournament_end(win: bool, rank: int) -> void:
 		_events.append(Events.tournament_win())
 	else:
 		_events.append(Events.tournament_lose(rank))
+	if config.spectator:
+		return  # 观战模式不写战绩、不动进度存档（避免覆盖玩家真实锦标赛）
 	stats_manager.record_tournament_finish(rank, players.size())
 	stats_manager.save()
 	save_manager.clear()  # 锦标赛结束后不再保留进度存档
@@ -261,7 +286,8 @@ func _next_alive_seat_after(seat: int) -> int:
 
 
 func _autosave() -> void:
-	if not finished:
+	# 观战模式不写进度存档：不能覆盖玩家真实锦标赛的存档
+	if not finished and not config.spectator:
 		save_manager.save(to_dict())
 
 

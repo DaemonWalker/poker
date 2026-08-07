@@ -6,15 +6,18 @@ const SPIN_FPS := 12.0
 
 var _ai_count := 5
 var _config: TournamentManager.TournamentConfig = null
+## 观战模式（params.spectator）：冠军是 AI，标题换措辞，"再来一局"仍走观战。
+var _spectator := false
 var _trophy_rect: TextureRect = null
 var _spin_frames: Array[Texture2D] = []
 var _spin_time := 0.0
 
 
-## 由 Main.change_scene 传入：{win, rank, total, standings[{rank,name,is_human}], ai_count, config}
+## 由 Main.change_scene 传入：{win, rank, total, standings[{rank,name,is_human}], ai_count, config, spectator}
 func setup(params: Dictionary) -> void:
 	_ai_count = int(params.get("ai_count", 5))
 	_config = params.get("config")
+	_spectator = bool(params.get("spectator", false))
 	_build(params)
 
 
@@ -68,7 +71,11 @@ func _build(params: Dictionary) -> void:
 	var title := Label.new()
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	if win:
-		title.text = "夺冠！" if trophy_tex != null else "🏆 夺冠！"
+		if _spectator and not standings.is_empty():
+			# 观战模式冠军是 AI（standings 首名即冠军）
+			title.text = "%s 夺冠" % standings[0].name
+		else:
+			title.text = "夺冠！" if trophy_tex != null else "🏆 夺冠！"
 		title.add_theme_font_size_override("font_size", 48)
 		title.add_theme_color_override("font_color", Color(1, 0.85, 0.2))
 	else:
@@ -160,7 +167,12 @@ func _process(delta: float) -> void:
 func _on_again() -> void:
 	AudioManager.play(&"click")
 	var m := get_parent() as Main
-	if m != null:
+	if m == null:
+		return
+	if _spectator:
+		# 观战"再来一局"：同人数重开全 AI 局（配置由 TableScene 按设置重新构造）
+		m.start_spectator(_ai_count)
+	else:
 		m.start_new_tournament(_ai_count, _config)
 
 

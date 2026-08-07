@@ -43,6 +43,7 @@ res://
 │   ├── betting_round.gd     # 单轮下注状态机
 │   ├── pot_manager.gd       # 底池/边池分层与结算（全静态）
 │   ├── hand_controller.gd   # 一手牌完整流程
+│   ├── equity_calculator.gd # 观战模式实时胜率（蒙特卡洛 + 精确枚举，全静态）
 │   ├── events.gd            # 事件类型枚举 + 工厂函数
 │   ├── tournament_manager.gd# 锦标赛调度 + 整体序列化
 │   ├── save_manager.gd / stats_manager.gd   # 存档 / 战绩读写
@@ -164,7 +165,7 @@ func pot_size() -> int               # 全部 hand_total_bet 之和
 
 锦标赛调度 + 整体序列化。持有 `config / players / button_seat / blind_level / hands_played / hand_count_total / eliminated / finished` 与 `_rng`（`RandomNumberGenerator`）。
 
-- `TournamentConfig`（内部类）：`starting_chips=1000`、`hands_per_level=10`、`blind_levels` 10 级表（10/20…200/400）、`easy_mode=false`（简单模式，洗牌偏向人类）；`blinds_at(level)` 超表后末级 × `1 << (level - 9)` 翻倍；`to_dict/from_dict`。
+- `TournamentConfig`（内部类）：`starting_chips=1000`、`hands_per_level=10`、`blind_levels` 10 级表（10/20…200/400）、`easy_mode=false`（简单模式，洗牌偏向人类）、`spectator=false`（观战模式：全 AI 含 0 号位，DEAL_HOLE 全公开，不写存档不计战绩）；`blinds_at(level)` 超表后末级 × `1 << (level - 9)` 翻倍；`to_dict/from_dict`。
 - `start_new(config, ai_count, rng_seed := 0)`：人类坐 0 号位（名字"你"、`avatar_human`）；AI 显示身份（名字+头像）从 `AIProfiles.IDENTITIES` 洗牌抽取（不重复），打法参数从 `AIProfiles.PARAM_POOL` 带重复独立抽取，`ai_profile` 存参数组键（如 `"P07"`）；每个 AI 建一份 `AIMemory` 存入 `ai_memories`；按钮位随机。开局即存档。
 - `run_next_hand()`：`deck_seed := _rng.randi()`，以**同一手牌种子**构造 Deck 洗牌与 `AIDecider.new(deck_seed)`——存档恢复后决策序列可复现；`config.easy_mode` 时把人类座位作为 `rig_seat` 传入 HandController；`ai_memories` 共享引用传入 HandController；**hand.start() 前快照各玩家筹码**（`_chips_before_hand`）；执行一手并转发事件；手牌结束走 `_after_hand_end`。
 - `_after_hand_end`：**AI 情绪更新（本手盈亏喂 `AIMemory.notify_hand_result`，输大锅触发 tilt）** → 记录淘汰（按 ELIMINATED 事件顺序）→ 更新战绩（总手数、人类赢池、筹码峰值）→ 胜负判定（人类出局 → TOURNAMENT_LOSE{rank}；仅剩人类 → TOURNAMENT_WIN）→ 按钮移到下一存活座位 → 够手数则盲注升级（BLIND_UP）→ 战绩落盘 + 自动存档。`_tournament_end` 时 `save_manager.clear()` 清进度存档。
@@ -186,6 +187,20 @@ func pot_size() -> int               # 全部 hand_total_bet 之和
 - **HandStrength**（全静态）：`score(hole, community) -> float(0~1)` 按公共牌数量分流。翻牌前：启发式公式（对子 0.50~1.0；非对子按双高牌 + 同花/连张加成 − 断层扣分），覆盖全部 169 种起手归类，不用字面查表。翻牌后：成牌基础分（牌型映射 + 踢脚微调）+ 听牌出路 × 0.02（同花听 9、两头顺 8、卡顺 4，粗算不减重复牌）。
 - **AIDecider**：`var rng` 按手牌种子播种（`_init(rng_seed := 0)`）。`decide(ctx) -> {type, amount}`：评分 → 风格+情绪+对手调制（**有效参数 = 静态参数 + tilt_level × tilt_*_dir + adaptability × 对手偏移 × 样本完成度**，tilt=0 且 adaptability=0/无样本时逐比特退化为静态参数；入局线 `0.55 − 有效松度×0.35`，再按 `position_awareness` 随位置系数偏移、多人底池每多一对手 +0.03）→ 分档选动作（短筹码 < `4 + risk×8` 倍大盲触发全下倾向；强牌 ≥ 0.78 按激进度加注；弱牌面对便宜注按 `calling_tendency` 跟注，便宜线 `0.1 + risk×0.3` 倍剩余筹码；加注金额 ½~1 池随机受激进度缩放）→ **`_clamp` 终点钳制**，返回值永远在 `legal_actions` 允许集合内。**对手调制**（叠在 tilt 之后）：对手松（vpip 偏离基准 +0.3 以上）→ 松度下调（收紧等他撞）且诈唬下调；对手紧 → 诈唬上调；对手被动（aggression 低于基准）→ 加注倾向上调；对手摊牌偏弱 → 跟注倾向上调。偏移量 = `adaptability × 偏离基准程度 × 系数 × min(hands_seen/10, 1)`，统计与调制全部确定性、不消耗 rng。
 
+### 3.13 EquityCalculator（core/equity_calculator.gd，全静态）
+
+观战模式实时胜率。已知全部在局玩家手牌 + 已发公共牌，未知公共牌按剩余牌堆补齐：**未知 ≤2 张（翻牌圈起）精确枚举全部组合**（翻牌圈 9 人 C(34,2)=561 种），**未知 ≥3 张（翻牌前）蒙特卡洛抽样**（部分 Fisher-Yates 每次只洗未知张数）；逐次用 HandEvaluator 比牌，多人平分按份额计入，各座位胜率之和恒为 1。
+
+```gdscript
+class Job:  # 后台任务句柄：表现层放 Thread 执行，UI 线程轮询中间结果
+    var cancelled / max_iterations / iterations / exact / done
+    func equity() -> Dictionary  # {seat: 0~1}，加锁拷贝，无样本返回空表
+static func run_job(job, holes: Dictionary, community: Array[Card], rng_seed: int) -> void
+# 在调用线程内执行至 done；holes 只含在局（未弃牌未淘汰）玩家
+```
+
+蒙特卡洛每批 `MONTE_CARLO_BATCH=200` 次累积进 Job 并暴露中间结果（渐进收敛显示），批间响应 `cancelled`。性能实测（4.7.1 本机）：9 人翻牌前约 1.4ms/次迭代，单挑 0.3ms；翻牌圈 9 人精确枚举约 0.8s。预置全部座位键：零胜场座位在 `equity()` 中返回 0.0 而非缺键。
+
 ---
 
 ## 4. 事件清单（core/events.gd）
@@ -193,7 +208,7 @@ func pot_size() -> int               # 全部 hand_total_bet 之和
 | 事件 | 字段 | 说明 |
 |---|---|---|
 | HAND_START | hand_no, button_seat, sb, bb, alive_seats, start_chips, sb_seat, bb_seat | 一手开始；alive_seats = 本手参与者座位快照；start_chips = {座位: 筹码} 手牌开始前（盲注未扣）快照；sb_seat/bb_seat = 盲注座位（UI 据此把盲注标注为"小盲/大盲"） |
-| DEAL_HOLE | seat, cards, status, chips, bet | 发底牌；**AI 的 cards 为 []（不公开）**，人类为 2 张；status 为发牌时状态快照；chips/bet 为盲注扣除后快照 |
+| DEAL_HOLE | seat, cards, status, chips, bet | 发底牌；**AI 的 cards 为 []（不公开）**，人类为 2 张，**观战模式全部公开 2 张**；status 为发牌时状态快照；chips/bet 为盲注扣除后快照 |
 | ACTION_REQUIRED | seat, legal_actions, deadline_ms | 人类回合，**事件队列在此停住**等待提交 |
 | PLAYER_ACTION | seat, action, amount, chips_left, status, bet | 一次有效行动（**盲注无此事件**，UI 在 DEAL_HOLE 时顺带刷新筹码/下注显示）；status/bet 为动作后状态与本轮下注快照；**amount：加注取目标总额（"加注到"语义），跟注/全下取本动作实际付出筹码（由 HandController 结算，动作字典本身不带金额）** |
 | DEAL_FLOP | cards(3) | 发翻牌（3 张一并给出） |
@@ -217,7 +232,7 @@ func pot_size() -> int               # 全部 hand_total_bet 之和
 
 唯一常驻场景。`SCENES` 常量注册 5 个场景；`change_scene(name, params := {})`：释放当前场景、实例化新场景，params 非空且新场景实现 `setup(params)` 时调用之（结算界面靠它收名次表）。
 
-**开局意图**由 Main 持有（避免新增全局单例）：`table_intent`（CONTINUE/NEW）、`table_ai_count`（默认 5）、`table_config`；`continue_tournament()` / `start_new_tournament(ai_count, config := null)`。TableScene 作为其子节点在 `_ready` 时读取。`--auto` 命令行参数：`_ready` 直达牌桌（无头冒烟回归入口）；否则进主菜单。
+**开局意图**由 Main 持有（避免新增全局单例）：`table_intent`（CONTINUE/NEW/SPECTATE）、`table_ai_count`（默认 5）、`table_config`；`continue_tournament()` / `start_new_tournament(ai_count, config := null)` / `start_spectator(ai_count)`。TableScene 作为其子节点在 `_ready` 时读取。`--auto` / `--spectate` 命令行参数：`_ready` 直达牌桌（无头冒烟回归入口）；否则进主菜单。
 
 ### 5.2 TableScene（ui/table_scene.gd，牌桌控制器）
 
@@ -227,7 +242,9 @@ func pot_size() -> int               # 全部 hand_total_bet 之和
 
 **桌心信息布局**（`_style_center_labels`）：街名小字压公共牌正上方，底池金色 20 号字居中，消息条与盲注横幅为药丸底色块；**顶栏 TopBar 是 HBoxContainer，`_build_top_bar` 生成"级别 / 盲注 / 距升级"三枚胶囊徽章**，`_refresh_top_bar` 只更新文本。
 
-**主循环** `_run_tournament()`：`while not tm.finished and not _exit_to_menu: tm.run_next_hand() → event_player.play_events(...) → await queue_drained`（本手按过"跳过本局"则再 `await skip_popup_confirmed` 等摘要弹窗确认）。**顶栏"主菜单"按钮只置 `_exit_to_menu` 标志位，在手牌边界生效切场景**（进度已自动保存；中途释放场景会打断本循环的 await）。--auto 下隐藏菜单按钮。
+**主循环** `_run_tournament()`：`while not tm.finished and not _exit_to_menu: tm.run_next_hand() → event_player.play_events(...) → await queue_drained`（本手按过"跳过本局"则再 `await skip_popup_confirmed` 等摘要弹窗确认）。**顶栏"主菜单"按钮只置 `_exit_to_menu` 标志位，在手牌边界生效切场景**（进度已自动保存；中途释放场景会打断本循环的 await）。--auto/--spectate 下隐藏菜单按钮。
+
+**观战模式**（SPECTATE 意图或 `--spectate`，`_spectator`）：config = `GameSettings.make_config()` 且 `spectator=true`，始终 start_new（不 load_save，逻辑层不写存档不计战绩）。--spectate 复用 auto 全部冒烟行为（`smoke` 标志：跳动画、事件加速、结束 quit、隐藏菜单按钮）；菜单进入的观战是交互模式（动画正常、菜单按钮可用、结束走 result 并带 `spectator` 参数）。DEAL_HOLE 对所有座位带真实牌面，`on_deal_hole` 按 cards 是否为空分支，全部座位自然明牌（弃牌者手牌置灰由 `SeatUI.set_status` 统一处理）。**实时胜率**：`_spec_holes/_spec_folded/_spec_community` 全部来自事件快照（HAND_START 清空、DEAL_HOLE 记手牌、PLAYER_ACTION(FOLDED) 标记、DEAL_FLOP/TURN/RIVER 累积公共牌）；收齐一圈手牌/每次弃牌/每次发公共牌时 `_spec_recalc()`——取消旧 Job（cancelled + wait_to_finish，任何时刻最多一个线程）→ 在局玩家构造 holes → 新 Job（max_iterations=20000）放 Thread 跑 `EquityCalculator.run_job`（线程内严禁碰场景树）；`_process` 每 0.25s 轮询 `job.equity()` 推给 `SeatUI.set_equity`，done 后回收线程；HAND_END/ELIMINATED 取消并清标签，`_exit_tree` 兜底回收不留孤儿线程。
 
 **跳过本局**（`_build_skip_button` / `_build_skip_popup`）：人类弃牌的 PLAYER_ACTION 后右下角显示"跳过本局"按钮（auto 不显示）；点击置 `_skip_active`、`anim_enabled=false`、`event_player.fast_forward=true`，本手剩余事件瞬间播完，HAND_END 恢复原节奏。期间各 `on_xxx` 把事件写入 `_skip_sections`（按街分节：`_street` 由 `_set_street` 维护、`_community_dealt` 由发牌事件累积，供节标题与摊牌节公共牌行使用）；主循环在 `queue_drained` 后若 `_skip_has_content()` 则弹摘要弹窗（RichTextLabel：节标题加粗、行间全角缩进、节间空行、收池金色/淘汰灰色），摊牌节用 reveal 的 `best` 字段展示各牌手最佳五张组合。点"继续下一局"emit `skip_popup_confirmed`。
 
@@ -247,7 +264,7 @@ func pot_size() -> int               # 全部 hand_total_bet 之和
 
 ### 5.5 SeatUI / CardUI / RaiseSlider
 
-- **SeatUI**（170×126 PanelContainer，角色卡布局）：44px 头像框（圆角 PanelContainer 包 TextureRect，**头像铺满整框、方角由共享圆角裁剪 shader（`_rounded_avatar_material`，半径 10px）裁掉**，Godot 无原生圆角 clip_contents；`set_avatar` 按 `avatar_id` 加载，缺失连框隐藏不报错）、信息列（庄家白色圆形 D 徽章、名字、状态标签（弃牌灰/全下！橙红/出局暗灰 + OUT 整体置灰 0.35）、筹码金色/本轮下注蓝色）、隐藏技能槽行（**RPG 预留，`set_skill_slots(n)` 显示 n 个空槽**）、两张小尺寸 CardUI（46×66，`CARD_SIZE`，9 人满桌才能放下；底牌隐藏时容器收缩，布局按最大高度 126 校验）；A6 高亮金色边框呼吸循环 tween（切换时 kill 重建，节奏随行动重置属预期）；A9 省略号呼吸；`flip_reveal` 摊牌逐张翻面；`fade_out` 淘汰淡出。
+- **SeatUI**（170×126 PanelContainer，角色卡布局）：44px 头像框（圆角 PanelContainer 包 TextureRect，**头像铺满整框、方角由共享圆角裁剪 shader（`_rounded_avatar_material`，半径 10px）裁掉**，Godot 无原生圆角 clip_contents；`set_avatar` 按 `avatar_id` 加载，缺失连框隐藏不报错）、信息列（庄家白色圆形 D 徽章、名字、状态标签（弃牌灰/全下！橙红/出局暗灰 + OUT 整体置灰 0.35）、筹码金色/本轮下注蓝色）、隐藏技能槽行（**RPG 预留，`set_skill_slots(n)` 显示 n 个空槽**）、两张小尺寸 CardUI（46×66，`CARD_SIZE`，9 人满桌才能放下；底牌隐藏时容器收缩，布局按最大高度 126 校验）；A6 高亮金色边框呼吸循环 tween（切换时 kill 重建，节奏随行动重置属预期）；A9 省略号呼吸；`flip_reveal` 摊牌逐张翻面；`fade_out` 淘汰淡出。**观战胜率标签**（`_equity_bubble`）：tilt 气泡同款 overlay 挂法（浮在面板右上方、不参与布局），`set_equity(pct)` 显示"胜率 N%"金色小字、`hide_equity()` 隐藏，默认隐藏只由 TableScene 在观战模式驱动；弃牌时手牌置灰（`set_status` FOLDED 分支）。
 - **CardUI**（默认 56×80，实例可用 `card_size` 覆盖，须在 add_child 前设置）：贴图优先、缺失降级色块+文字（红桃/方块红字）。`flip_to_card(card, dur)` 横向压扁→换面→展开（dur 为半程）。贴图带静态缓存 `_tex_cache`。
 - **RaiseSlider**：滑条 + 金额标签 + 快捷按钮 ½池/¾池/1池（对齐步进、钳制范围）。
 
@@ -259,9 +276,11 @@ func pot_size() -> int               # 全部 hand_total_bet 之和
 
 `SFX` 常量映射 10 个音效名（StringName）→ `assets/audio/*.ogg`（清单见 GDD 第 7 章）。`play(sfx)`：8 个 AudioStreamPlayer 轮询复用，流懒加载缓存；未知名称只 push_warning 不报错。`set_volume(linear 0~1)`：写 Master 总线（0 则 mute）并持久化到 settings.cfg `[audio] volume`；`get_volume()`。表现层任何音效失败都不允许崩溃。
 
-### 5.8 --auto 模式行为汇总
+### 5.8 --auto / --spectate 模式行为汇总
 
 `godot --headless --path . -- --auto`：直达牌桌；`anim_enabled=false` 跳过全部 tween 与 AI 思考延迟（**音效照常播放**，无头下无害）；人类回合由 EventPlayer 自动代打；事件间隔缩为 0.03s；锦标赛结束自动 `quit()`；菜单按钮隐藏。
+
+`godot --headless --path . -- --spectate`：以上行为全部相同，差别只在开局——观战局（config.spectator=true，全 AI，始终新局不写存档），无 ACTION_REQUIRED 事件，胜率计算线程照常跑（观战 UI 逻辑全链路冒烟）。
 
 ---
 
@@ -321,19 +340,21 @@ GameSettings 静态接口：`apply_runtime()`（启动时把 deadline 写入 `Ev
 ```bash
 # 首次或新增 class_name 文件后：先生成全局类缓存（否则报 "Could not find type"）
 godot --headless --path . --import
-# 单元测试：7 个套件共 435 项断言，失败 quit(1)
+# 单元测试：12 个套件共 2316 项断言，失败 quit(1)
 godot --headless --path . --script tests/run_tests.gd
 # 全 AI 批量模拟：默认 100 场（8 AI），逐手校验筹码守恒，输出统计
 godot --headless --path . --script tests/simulate.gd -- [场数] [起始种子]
 # UI 全链路无头冒烟：自动代打打完整场后自动退出
 godot --headless --path . -- --auto
+# 观战模式无头冒烟：全 AI（含 0 号位）打完整场后自动退出，不写存档/战绩
+godot --headless --path . -- --spectate
 ```
 
-断言分布：test_deck + test_hand_evaluator 42；test_betting_round + test_pot_manager 99；test_hand_controller 37；test_tournament + test_save_load 257，合计 435。模拟 100 场 0 失败（含筹码守恒、盲注升级覆盖）。
+断言分布：既有 10 套件 1257；新增 test_equity_calculator 28（胜率：蒙特卡洛收敛/精确枚举/取消语义）、test_spectator 1031（观战锦标赛全链路隔离校验），合计 2316。模拟 100 场 0 失败（含筹码守恒、盲注升级覆盖）。
 
 ### 7.2 测试基建
 
-`run_tests.gd`（extends SceneTree）顺序跑 7 个 suite 的所有 `test_` 方法并计数。`test_base.gd` 提供断言计数（`check/expect_eq`）、`cards("As Kd")` 牌例构造、`rigged_deck` 确定牌序、`drive_hand/drive_waiting` 脚本驱动挂起的手牌/锦标赛。不引入第三方测试框架。
+`run_tests.gd`（extends SceneTree）顺序跑 12 个 suite 的所有 `test_` 方法并计数。`test_base.gd` 提供断言计数（`check/expect_eq`）、`cards("As Kd")` 牌例构造、`rigged_deck` 确定牌序、`drive_hand/drive_waiting` 脚本驱动挂起的手牌/锦标赛。不引入第三方测试框架。
 
 ### 7.3 已知陷阱（踩过的坑）
 
@@ -372,6 +393,7 @@ godot --headless --path . -- --auto
 17. **素材与降级策略**：扑克牌用 playing-cards-assets（MIT，原 Kenney 像素牌 42×60 放大模糊已弃用）、音效用 Kenney CC0 包；空槽位框等少数贴图程序化自生成，头像/筹码/背景/奖杯/UI 贴图（庄家按钮、彩带、Logo、牌背）均为 Blender 无头渲染（脚本 `tools/blender/`，色调/图形自原程序化版提取或对齐）；飞行筹码按金额区间着色不印面值（28px 不可读，金额由座位标签显示）；贴图/音效缺失一律降级不报错（色块占位、push_warning），表现层不允许因素材问题崩溃。
 18. **事件携带状态快照（alive_seats / status），UI 不读实时 PlayerState 状态**：整手牌同步跑完后事件才逐条回放，被淘汰者的实时 status 已是 OUT；若 UI 读实时状态，全下（或将淘汰）的玩家会从手牌开始就被显示成"出局"。
 19. **简单模式用"假定摊牌必胜"重洗实现，而非改 AI 或改赔率**：只动牌堆顺序，规则/结算/事件零侵入；派生种子（`base_seed + attempt`）保证同种子可复现，存档语义不受影响；难度随 TournamentConfig 快照，进行中锦标赛不被半路改。
+20. **观战模式是配置标志而非独立模式类**（`config.spectator`）：复用同一套锦标赛规则与事件流——0 号位改由 AI 占据（显示身份仅 8 个不重复，故观战总人数上限 8），DEAL_HOLE 由 HandController 的 `reveal_hole_cards` 标志公开全部手牌，事件结构不变；**数据隔离在逻辑层收口**（`_autosave`/`_tournament_end`/战绩段统一判 spectator），保证观战局永远碰不到玩家真实的 tournament.save 与 stats.save。胜率计算（EquityCalculator）放后台线程、UI 只经 Job 加锁读快照：GDScript 评估器单次 7 张约 160µs，翻牌前精确枚举（C(44,5) 百万级）等不起，故翻牌前用渐进蒙特卡洛（误差随样本收敛）、翻牌圈起组合数 ≤561 改精确枚举——不引入原生语言/GDExtension。
 
 ---
 

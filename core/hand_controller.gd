@@ -23,6 +23,7 @@ var round: BettingRound
 var waiting_seat: int = -1  # >=0：挂起等待该座位（人类）提交动作
 var ai_decider: AIDecider
 var ai_memories: Dictionary = {}  # seat -> AIMemory，由 TournamentManager 持有并共享引用
+var reveal_hole_cards: bool = false  # 观战模式：DEAL_HOLE 事件公开所有玩家手牌
 
 var _chips_at_start := {}  # seat -> 本手开始时筹码（淘汰名次排序用）
 var _alive_at_start := 0
@@ -33,13 +34,14 @@ var _alive_at_start := 0
 ## p_ai_memories 为 AI 情绪状态表（seat -> AIMemory），决策时只读传入 ctx。
 func _init(p_players: Array[PlayerState], p_button_seat: int, p_small_blind: int, p_big_blind: int,
 		p_deck_seed: int, p_ai_decider: AIDecider, p_hand_no: int, p_rig_seat: int = -1,
-		p_ai_memories: Dictionary = {}) -> void:
+		p_ai_memories: Dictionary = {}, p_reveal_hole_cards: bool = false) -> void:
 	players = p_players
 	button_seat = p_button_seat
 	small_blind = p_small_blind
 	big_blind = p_big_blind
 	ai_decider = p_ai_decider
 	ai_memories = p_ai_memories
+	reveal_hole_cards = p_reveal_hole_cards
 	hand_no = p_hand_no
 	deck = Deck.new()
 	deck.shuffle(p_deck_seed)
@@ -201,7 +203,8 @@ func _deal_hole() -> void:
 			p.hole_cards.append(deck.draw())
 			seat = _next_seat_after(seat)
 	for p in players:
-		events.append(Events.deal_hole(p.seat_index, p.hole_cards.duplicate() if p.is_human else [], p.status, p.chips, p.current_bet))
+		var shown: Array = p.hole_cards.duplicate() if (p.is_human or reveal_hole_cards) else []
+		events.append(Events.deal_hole(p.seat_index, shown, p.status, p.chips, p.current_bet))
 
 
 # ---- 简单模式洗牌 ----

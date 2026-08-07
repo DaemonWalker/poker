@@ -57,6 +57,22 @@ var _community_dealt: Array[Card] = []
 var _sb_seat := -1
 var _bb_seat := -1
 
+## 观战模式：全 AI 明牌 + 实时胜率（EquityCalculator 放后台线程，主线程只读快照）。
+var _spectator := false
+## 胜率轮询间隔（秒）与蒙特卡洛迭代上限。
+const SPEC_POLL_INTERVAL := 0.25
+const SPEC_MAX_ITERATIONS := 20000
+## 观战状态全部来自事件快照：HAND_START 清空，DEAL_HOLE 记手牌，
+## PLAYER_ACTION(FOLDED) 标记弃牌，DEAL_FLOP/TURN/RIVER 累积公共牌。
+var _spec_holes: Dictionary = {}
+var _spec_folded: Dictionary = {}
+var _spec_community: Array[Card] = []
+## 本手在局人数（HAND_START.alive_seats）：DEAL_HOLE 收齐后再重算胜率。
+var _spec_alive := 0
+var _spec_job: EquityCalculator.Job = null
+var _spec_thread: Thread = null
+var _spec_poll := 0.0
+
 const SUIT_SYMBOLS := ["♠", "♥", "♣", "♦"]
 
 ## 顶栏胶囊徽章：级别 / 盲注 / 距升级（_build_top_bar 创建）。
@@ -76,14 +92,28 @@ var _badge_hands: Label
 
 
 func _ready() -> void:
-	var auto := "--auto" in OS.get_cmdline_user_args()
-	anim_enabled = not auto
+	var args := OS.get_cmdline_user_args()
+	var auto := "--auto" in args
+	var spec_cli := "--spectate" in args
+	var main := get_parent() as Main
+	_spectator = spec_cli or (main != null and main.table_intent == Main.TableIntent.SPECTATE)
+	# --spectate 与 --auto 共享全部冒烟行为（跳动画、事件加速、结束自动 quit、隐藏菜单按钮）；
+	# 经主菜单进入的观战是交互模式：动画正常、菜单按钮可用、结束走 result 场景。
+	var smoke := auto or spec_cli
+	anim_enabled = not smoke
 	ANIM_SPEED = GameSettings.anim_speed()
 
 	tm = TournamentManager.new()
 	var resumed := false
-	var main := get_parent() as Main
-	if auto or main == null:
+	if _spectator:
+		# 观战模式：全 AI（含 0 号位），始终开新局，不读/不写存档；配置取设置并标记 spectator
+		var spec_config := GameSettings.make_config()
+		spec_config.spectator = true
+		var spec_ai := AI_COUNT
+		if main != null and not spec_cli:
+			spec_ai = clampi(main.table_ai_count, 1, 7)
+		tm.start_new(spec_config, spec_ai)
+	elif auto or main == null:
 		# --auto 冒烟/独立运行：保持原行为（有存档继续，否则默认 5 AI 开新局）
 		resumed = tm.load_save()
 		if not resumed:
@@ -117,14 +147,14 @@ func _ready() -> void:
 	event_player = EventPlayer.new()
 	event_player.tm = tm
 	event_player.table = self
-	event_player.auto_play = auto
+	event_player.auto_play = smoke
 	add_child(event_player)
 
 	_action_panel.action_submitted.connect(_on_panel_action)
 	_action_panel.timed_out.connect(_on_panel_timeout)
 	_menu_button.pressed.connect(_on_menu_button)
-	# 菜单按钮只对路由进入的正式对局有意义（--auto/独立运行隐藏）
-	_menu_button.visible = not auto and main != null
+	# 菜单按钮只对路由进入的正式对局有意义（--auto/--spectate/独立运行隐藏）
+	_menu_button.visible = not smoke and main != null
 
 	_build_skip_button()
 	_build_skip_popup()
@@ -132,9 +162,11 @@ func _ready() -> void:
 	_build_top_bar()
 	_style_center_labels()
 	_refresh_top_bar()
-	_message_label.text = "继续锦标赛…" if resumed else "锦标赛开始！"
-	if auto:
+	_message_label.text = "继续锦标赛…" if resumed else ("观战锦标赛开始！" if _spectator else "锦标赛开始！")
+	if smoke:
 		print("[Table] auto_play 开启，开始锦标赛")
+	# 胜率轮询只在观战模式需要（_process 默认关闭以省开销）
+	set_process(_spectator)
 	_run_tournament()
 
 
@@ -181,6 +213,15 @@ func on_hand_start(event: Dictionary) -> void:
 		seat.set_highlight(false)
 	_refresh_top_bar()
 	_set_street(HandController.Street.PREFLOP)
+	if _spectator:
+		# 观战状态全部用事件快照重建：清空上一手的手牌/弃牌/公共牌与胜率显示
+		_spec_cancel_job()
+		_spec_holes.clear()
+		_spec_folded.clear()
+		_spec_community.clear()
+		_spec_alive = (event.alive_seats as Array).size()
+		for seat in seats:
+			seat.hide_equity()
 
 
 func on_deal_hole(event: Dictionary) -> void:
@@ -212,6 +253,14 @@ func on_deal_hole(event: Dictionary) -> void:
 		seat.show_backs()
 	else:
 		seat.show_hole(event.cards)
+	if _spectator and not event.cards.is_empty():
+		# 观战模式 DEAL_HOLE 对所有座位带真实牌面：记录快照，收齐一整圈后再重算胜率
+		# （逐座位重算会反复取消重启计算线程，蒙特卡洛批间响应取消有 ~0.28s 阻塞）
+		var hole: Array[Card] = []
+		hole.assign(event.cards)
+		_spec_holes[event.seat] = hole
+		if _spec_holes.size() >= _spec_alive:
+			_spec_recalc()
 
 
 func on_player_action(event: Dictionary) -> void:
@@ -244,6 +293,11 @@ func on_player_action(event: Dictionary) -> void:
 	elif not event_player.auto_play and p.is_human \
 			and event.action == BettingRound.ActionType.FOLD:
 		_skip_button.show()
+	if _spectator and action_status == PlayerState.Status.FOLDED:
+		# 弃牌者剔除出胜率计算并隐藏其标签，剩余在局玩家重算
+		_spec_folded[event.seat] = true
+		seat.hide_equity()
+		_spec_recalc()
 
 
 ## A9 思考中：AI 行动前延迟并显示省略号（由 EventPlayer 调用）。
@@ -278,6 +332,14 @@ func on_deal_community(event: Dictionary) -> void:
 			if _skip_active:
 				_skip_section("河牌  " + _card_text(event.card))
 	# 底池保持上一 ROUND_END 的快照值（实时 pot_size 已含本街 AI 下注，不能刷新）
+	if _spectator:
+		# 累积公共牌快照并重算胜率（翻牌圈起为精确枚举，完成前保持旧显示）
+		if event.type == Events.Type.DEAL_FLOP:
+			for c in event.cards:
+				_spec_community.append(c)
+		else:
+			_spec_community.append(event.card)
+		_spec_recalc()
 
 
 ## 单张公共牌入场：动画开时翻面，否则直接显示。
@@ -338,6 +400,10 @@ func on_eliminated(event: Dictionary) -> void:
 		await seats[event.seat].fade_out(0.5 * ANIM_SPEED)
 	seats[event.seat].refresh_status(p)
 	_message_label.text = "%s 淘汰，第 %d 名" % [p.name, event.rank]
+	if _spectator:
+		# 淘汰发生在收池后：本手胜率已无意义，取消任务并清掉该座位标签
+		_spec_cancel_job()
+		seats[event.seat].hide_equity()
 	if _skip_active:
 		_skip_add_line("[color=gray]✖ %s 淘汰，第 %d 名[/color]" % [p.name, event.rank])
 
@@ -377,6 +443,11 @@ func on_hand_end(_event: Dictionary) -> void:
 		_skip_active = false
 		event_player.fast_forward = false
 		anim_enabled = not event_player.auto_play
+	if _spectator:
+		# 手牌结束：取消胜率任务并清掉全部标签
+		_spec_cancel_job()
+		for seat in seats:
+			seat.hide_equity()
 
 
 ## 人类回合：显示操作面板并挂起事件队列。
@@ -410,6 +481,7 @@ func on_tournament_end(event: Dictionary) -> void:
 			"standings": _build_standings(),
 			"ai_count": tm.players.size() - 1,
 			"config": tm.config,
+			"spectator": _spectator,
 		})
 
 
@@ -606,6 +678,61 @@ func _refresh_top_bar() -> void:
 func _set_street(street: HandController.Street) -> void:
 	_street = street
 	_street_label.text = STREET_NAMES.get(street, "")
+
+
+# ---- 观战模式：实时胜率（EquityCalculator 后台线程） ----
+
+## 定时轮询当前胜率任务的中间结果（蒙特卡洛渐进收敛，标签越来越准；
+## 精确枚举完成前 equity() 为空，标签保持旧值），job 结束后回收线程。
+func _process(delta: float) -> void:
+	if _spec_job == null:
+		return
+	_spec_poll += delta
+	if _spec_poll < SPEC_POLL_INTERVAL:
+		return
+	_spec_poll = 0.0
+	var snapshot: Dictionary = _spec_job.equity()
+	for seat in snapshot:
+		if seat is int and seat < seats.size():
+			seats[seat].set_equity(snapshot[seat])
+	if _spec_job.done:
+		_spec_thread.wait_to_finish()
+		_spec_thread = null
+		_spec_job = null
+
+
+## 重算胜率：取消旧任务并等旧线程退出（任何时刻最多一个计算线程），
+## 用在局玩家（剔除弃牌者）手牌 + 已发公共牌新建 Job 放后台线程跑。
+## 线程内只跑纯逻辑（EquityCalculator.run_job），严禁碰场景树。
+func _spec_recalc() -> void:
+	_spec_cancel_job()
+	var holes := {}
+	for seat in _spec_holes:
+		if not _spec_folded.has(seat):
+			holes[seat] = _spec_holes[seat]
+	if holes.is_empty():
+		return
+	_spec_job = EquityCalculator.Job.new()
+	_spec_job.max_iterations = SPEC_MAX_ITERATIONS
+	_spec_thread = Thread.new()
+	_spec_thread.start(EquityCalculator.run_job.bind(
+			_spec_job, holes, _spec_community.duplicate(), int(randi())))
+
+
+## 取消胜率任务并回收线程；蒙特卡洛批间才响应取消（9 人约 0.28s/批），此处会短暂阻塞。
+func _spec_cancel_job() -> void:
+	if _spec_job != null:
+		_spec_job.cancelled = true
+	if _spec_thread != null:
+		if _spec_thread.is_started():
+			_spec_thread.wait_to_finish()
+		_spec_thread = null
+	_spec_job = null
+
+
+func _exit_tree() -> void:
+	# 场景退出必须取消并回收胜率线程，不留孤儿线程（非观战模式下为空操作）
+	_spec_cancel_job()
 
 
 # ---- 跳过本局（人类弃牌后快进 + 摘要弹窗） ----

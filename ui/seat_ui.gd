@@ -54,6 +54,9 @@ var _thinking_label: Label
 var _skill_row: HBoxContainer
 var _tilt_bubble: PanelContainer
 var _tilt_label: Label
+## 观战模式胜率标签（overlay 挂载，不参与布局；默认隐藏，由 TableScene 驱动）。
+var _equity_bubble: PanelContainer
+var _equity_label: Label
 var _cards: Array[CardUI] = []
 var _bg: StyleBoxFlat
 var _highlight_tween: Tween
@@ -227,6 +230,27 @@ func _ready() -> void:
 	_tilt_label.add_theme_font_override("font", emoji_font)
 	_tilt_bubble.add_child(_tilt_label)
 
+	# 观战模式胜率标签：浮在面板右上方（overlay 不参与布局，不会撑爆面板高度）
+	_equity_bubble = PanelContainer.new()
+	_equity_bubble.position = Vector2(WIDTH - 66, -26)
+	_equity_bubble.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var e_style := StyleBoxFlat.new()
+	e_style.bg_color = Color(0.10, 0.11, 0.14, 0.92)
+	e_style.set_corner_radius_all(8)
+	e_style.set_border_width_all(1)
+	e_style.border_color = Color(0.30, 0.33, 0.37)
+	e_style.content_margin_left = 6
+	e_style.content_margin_right = 6
+	e_style.content_margin_top = 1
+	e_style.content_margin_bottom = 1
+	_equity_bubble.add_theme_stylebox_override("panel", e_style)
+	_equity_bubble.visible = false
+	overlay.add_child(_equity_bubble)
+	_equity_label = Label.new()
+	_equity_label.add_theme_font_size_override("font_size", 12)
+	_equity_label.add_theme_color_override("font_color", Color(0.95, 0.80, 0.35))
+	_equity_bubble.add_child(_equity_label)
+
 
 ## 绑定玩家数据（座位初始化与每手开始刷新用）。
 func bind_player(p: PlayerState) -> void:
@@ -254,6 +278,7 @@ func refresh_status(p: PlayerState) -> void:
 
 
 ## 按状态值刷新状态标签与整体置灰（事件回放用快照值，不读实时 PlayerState）。
+## 弃牌时手牌保持显示但置灰（观战模式明牌用；普通模式人类弃牌同样生效）。
 func set_status(status: int) -> void:
 	match status:
 		PlayerState.Status.FOLDED:
@@ -268,6 +293,8 @@ func set_status(status: int) -> void:
 		_:
 			_status_label.text = ""
 	modulate = Color(1, 1, 1, 0.35) if status == PlayerState.Status.OUT else Color.WHITE
+	for c in _cards:
+		c.modulate = Color(0.55, 0.55, 0.55) if status == PlayerState.Status.FOLDED else Color.WHITE
 
 
 func set_chips(chips: int) -> void:
@@ -331,7 +358,18 @@ func set_tilt(level: float, dir: float) -> void:
 	_tilt_bubble.visible = true
 
 
-## 人类：亮牌面。
+## 观战模式：显示胜率（pct 为 0~1，整数百分比金色小字）。
+func set_equity(pct: float) -> void:
+	_equity_label.text = "胜率 %d%%" % roundi(pct * 100.0)
+	_equity_bubble.visible = true
+
+
+## 观战模式：隐藏胜率（弃牌/淘汰/手牌结束，由 TableScene 驱动）。
+func hide_equity() -> void:
+	_equity_bubble.visible = false
+
+
+## 亮牌面：人类座位，或观战模式全部座位（DEAL_HOLE 事件带真实牌面时）。
 func show_hole(cards: Array) -> void:
 	for i in 2:
 		if i < cards.size() and cards[i] is Card:
@@ -340,7 +378,7 @@ func show_hole(cards: Array) -> void:
 			_cards[i].hide_card()
 
 
-## AI：显示牌背。
+## AI：显示牌背（DEAL_HOLE 事件不带牌面时；观战模式不会走到这里）。
 func show_backs() -> void:
 	for c in _cards:
 		c.set_back()

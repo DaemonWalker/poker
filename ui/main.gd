@@ -10,8 +10,8 @@ const SCENES := {
 	"table": "res://scenes/table.tscn",
 }
 
-## 开局意图：继续存档 / 新建锦标赛。
-enum TableIntent { CONTINUE, NEW }
+## 开局意图：继续存档 / 新建锦标赛 / 观战模式（全 AI）。
+enum TableIntent { CONTINUE, NEW, SPECTATE }
 
 var table_intent: int = TableIntent.CONTINUE
 var table_ai_count: int = 5
@@ -22,8 +22,10 @@ var _current: Node = null
 
 func _ready() -> void:
 	GameSettings.apply_runtime()
-	if "--auto" in OS.get_cmdline_user_args():
-		# 无头冒烟回归入口：直达牌桌（TableScene 内保持原 load_save/默认开局行为）
+	var args := OS.get_cmdline_user_args()
+	if "--auto" in args or "--spectate" in args:
+		# 无头冒烟回归入口：直达牌桌（TableScene 内保持原 load_save/默认开局行为；
+		# --spectate 为观战模式冒烟，由 TableScene 识别该参数）
 		change_scene("table")
 	else:
 		change_scene("main_menu")
@@ -60,4 +62,12 @@ func start_new_tournament(ai_count: int, config: TournamentManager.TournamentCon
 	table_intent = TableIntent.NEW
 	table_ai_count = ai_count
 	table_config = config
+	change_scene("table")
+
+
+## 开观战锦标赛（全 AI，ai_count 1~7；配置由 TableScene 按设置构造并标记 spectator）。
+func start_spectator(ai_count: int) -> void:
+	table_intent = TableIntent.SPECTATE
+	table_ai_count = ai_count
+	table_config = null
 	change_scene("table")

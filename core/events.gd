@@ -4,7 +4,7 @@ class_name Events extends RefCounted
 
 enum Type {
 	HAND_START,        # {hand_no, button_seat, sb, bb, alive_seats, start_chips, sb_seat, bb_seat}（alive_seats = 本手参与者座位）
-	DEAL_HOLE,         # {seat, cards(仅人类可见，AI 为 []), status, chips, bet}（chips/bet 为盲注后快照）
+	DEAL_HOLE,         # {seat, cards(仅人类可见，AI 为 []；观战模式全部公开), status, chips, bet}（chips/bet 为盲注后快照）
 	ACTION_REQUIRED,   # {seat, legal_actions, deadline_ms}（人类玩家回合，队列停住）
 	PLAYER_ACTION,     # {seat, action, amount, chips_left, status, bet}
 	DEAL_FLOP,         # {cards: Array[Card](3)}

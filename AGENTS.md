@@ -18,6 +18,9 @@ godot --headless --path . --script tests/run_tests.gd
 # UI 全链路冒烟：AI 代打完整场自动 quit，0 报错为通过；改 ui/、scenes/ 后必跑
 godot --headless --path . -- --auto
 
+# 观战模式冒烟：全 AI（含 0 号位）打完整场自动 quit，0 报错为通过；且不得写 tournament.save / 动 stats.save
+godot --headless --path . -- --spectate
+
 # 批量模拟：筹码守恒逐手校验，改下注/结算逻辑后建议跑
 godot --headless --path . --script tests/simulate.gd -- 100 1
 
@@ -55,7 +58,7 @@ godot --path .
 
 ## 不可破坏的既有行为
 
-- `--auto` 入口：`Main._ready` 检测参数直达牌桌；TableScene 内 `anim_enabled=false` 跳动画但音效保留；锦标赛结束自动 `quit()`。冒烟回归全依赖它。
+- `--auto` 入口：`Main._ready` 检测参数直达牌桌；TableScene 内 `anim_enabled=false` 跳动画但音效保留；锦标赛结束自动 `quit()`。冒烟回归全依赖它。`--spectate` 复用同一套冒烟行为，但开的是观战局（config.spectator=true，全 AI 明牌 + 后台线程算胜率）。
 - `TableScene.ANIM_SPEED` 是所有 tween 时长的乘数，改动画时保持统一乘算。
 - 盲注静默扣除（无 PLAYER_ACTION 事件），UI 在 DEAL_HOLE 时从 `tm.players` 同步刷新——这是有意设计，不要为盲注新增事件。
 - 战绩由逻辑层 `TournamentManager._tournament_end` 自动 record + save，界面只读展示，不要在 UI 侧写战绩。

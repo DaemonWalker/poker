@@ -14,6 +14,8 @@ func _init() -> void:
 		preload("res://tests/test_tournament.gd").new(),
 		preload("res://tests/test_save_load.gd").new(),
 		preload("res://tests/test_easy_mode.gd").new(),
+		preload("res://tests/test_equity_calculator.gd").new(),
+		preload("res://tests/test_spectator.gd").new(),
 	]
 	var total_checks := 0
 	var total_failures := 0

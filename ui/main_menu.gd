@@ -1,5 +1,5 @@
 class_name MainMenu extends Control
-## 主菜单：继续/新建锦标赛（AI 数量 1~8）、战绩统计、设置、退出。
+## 主菜单：继续/新建锦标赛（AI 数量 1~8）、观战模式（全 AI，同一数量选择）、战绩统计、设置、退出。
 ## 布局在 _ready 代码构建（与 SeatUI/CardUI 同一惯例）。
 
 var _continue_btn: Button
@@ -65,6 +65,11 @@ func _ready() -> void:
 	start_btn.text = "开始"
 	_new_panel.add_child(start_btn)
 	start_btn.pressed.connect(_on_start_new)
+	# 观战模式入口：沿用同一 AI 数量选择（观战总人数 = AI+1，上限 8 人，故 AI 至多 7）
+	var spectate_btn := Button.new()
+	spectate_btn.text = "观战"
+	_new_panel.add_child(spectate_btn)
+	spectate_btn.pressed.connect(_on_start_spectate)
 
 	var stats_btn := _make_btn(vbox, "战绩统计")
 	stats_btn.pressed.connect(_go.bind("stats"))
@@ -126,6 +131,14 @@ func _start_new_game() -> void:
 	var m := _main()
 	if m != null:
 		m.start_new_tournament(int(_ai_count_spin.value))
+
+
+## 观战模式不写/不读存档，无需覆盖确认，直接开局。
+func _on_start_spectate() -> void:
+	AudioManager.play(&"click")
+	var m := _main()
+	if m != null:
+		m.start_spectator(mini(int(_ai_count_spin.value), 7))
 
 
 func _go(scene_name: String) -> void:
